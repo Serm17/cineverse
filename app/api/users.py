@@ -1,19 +1,20 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
 from app.core.current_user import get_current_user
 from app.core.dependencies import get_db
-from app.schemas.movies import MovieDetailData
-from app.services.user_service import get_user, movies_like_result
+from app.schemas.movies import ShowMovies
+from app.services.movies.movies_search_service import get_movie_result
+from app.services.user_service import get_recently_viewed_movies_result, get_user, movies_like_result
 
 
 # 사용자 관련 API들을 묶는 Router /users/
 router = APIRouter(
-    prefix="/users/me",
-    tags=["Users"],
+    prefix="/user",
+    tags=["User"],
 )
 
-# 내 정보 조회 GET /users/me
+# 내 정보 조회 GET /user
 @router.get("")
 async def get_my_info(
     cureent_user : dict = Depends(get_current_user),
@@ -49,7 +50,7 @@ async def get_my_info(
             "error": str(e)
         }
     
-# 취향 GET /users/me/preferences
+# 취향 GET /user/preferences
 @router.get("/preferences")
 async def get_my_preferences(
     cureent_user : dict = Depends(get_current_user),
@@ -76,7 +77,7 @@ async def get_my_preferences(
             "error" : str(e),
         }
 
-# 좋아요 누른 영화 - 조회
+# 좋아요 누른 영화 - 조회 /user/movies-like
 @router.get("/movies-like")
 async def get_my_like(
     current_user : dict = Depends(get_current_user),
@@ -99,12 +100,7 @@ async def get_my_like(
             "state" : "success",
             "message" : "좋아요 누른 영화 조회 성공",
             "data" : [
-                {
-                    "movie_id" : like.movie_id,
-                    "title" : like.movie.title,
-                    "poster_path" : like.movie.poster_path,
-                    "vote_average" : like.movie.vote_average
-                }
+                get_movie_result(like.movie)
                 for like in movies_result
             ],
         }
@@ -113,5 +109,41 @@ async def get_my_like(
         return {
             "state" : "error",
             "message" : "좋아요 조회 에러",
+            "error" : str(e),
+        }
+
+# 최근에 상세 조회한 영화 조회
+@router.get("/recently-viewed", response_model=ShowMovies)
+async def get_recently_movies(
+    current_user : dict = Depends(get_current_user),
+    limit : int = Query(5, ge=1, le=50),
+    db : Session = Depends(get_db)
+):
+    try:
+        # JWT 검증
+        user_id = current_user["user_id"]
+
+        movies_viewed_result = get_recently_viewed_movies_result(db, user_id, limit)
+
+        if not movies_viewed_result:
+            return {
+                "state" : "failure",
+                "message" : "최근 조회한 영화가 없습니다.",
+                "data" : [],
+            }
+        return {
+            "state" : "success",
+            "message" : "최근 조회한 영화 조회 성공",
+            "data" : [
+                get_movie_result(viewed.movie)
+                for viewed in movies_viewed_result
+            ]
+
+        }
+    except Exception as e:
+        return {
+            "state" : "error",
+            "message" : "최근 본 영화 조회 에러",
+            "data" : [],
             "error" : str(e),
         }

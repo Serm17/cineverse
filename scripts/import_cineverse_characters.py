@@ -244,6 +244,16 @@ def fetch_movie_credits(tmdb: TMDBClient, tmdb_id: int, language: str) -> dict[s
     return tmdb.get(f"/movie/{tmdb_id}/credits", {"language": language})
 
 
+def fetch_movie_keywords(tmdb: TMDBClient, tmdb_id: int) -> list[str]:
+    try:
+        payload = tmdb.get(f"/movie/{tmdb_id}/keywords")
+    except RuntimeError as exc:
+        print(f"[warn] keywords 생략: tmdb_id={tmdb_id} ({exc})")
+        return []
+
+    return unique_names([keyword.get("name", "") for keyword in payload.get("keywords", [])])
+
+
 def find_cast_member(seed: CharacterSeed, credits: dict[str, Any]) -> dict[str, Any] | None:
     cast = credits.get("cast", [])
     actor_hint = normalize_text(seed.actor_hint)
@@ -284,6 +294,7 @@ def build_movie_row(
     details: dict[str, Any],
     credits: dict[str, Any],
     genre_map: dict[int, str],
+    keywords: list[str],
 ) -> dict[str, Any]:
     genre_names = [
         genre_map[genre_id]
@@ -300,7 +311,7 @@ def build_movie_row(
         "genres": unique_names(genre_names) or None,
         "director": get_director(credits),
         "cast": unique_names([member.get("name", "") for member in credits.get("cast", [])])[:10] or None,
-        "keywords": None,
+        "keywords": unique_names(keywords) or None,
         "year": parse_year(details.get("release_date") or movie.get("release_date")),
         "language": truncate(details.get("original_language") or movie.get("original_language"), 10),
         "vote_average": details.get("vote_average") or movie.get("vote_average"),
@@ -356,18 +367,29 @@ def import_characters(args: argparse.Namespace) -> None:
     tmdb = TMDBClient()
     try:
         genre_map = fetch_genre_map(tmdb, args.language)
-        rows: list[tuple[CharacterSeed, dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None, dict[str, Any] | None]] = []
+        rows: list[
+            tuple[
+                CharacterSeed,
+                dict[str, Any] | None,
+                dict[str, Any] | None,
+                dict[str, Any] | None,
+                dict[str, Any] | None,
+                list[str],
+            ]
+        ] = []
 
         for index, seed in enumerate(CINEVERSE_CHARACTERS, start=1):
             movie = search_movie(tmdb, seed, args.language, args.region)
             details = credits = cast_member = None
+            keywords: list[str] = []
             if movie:
                 tmdb_id = int(movie["id"])
                 details = fetch_movie_details(tmdb, tmdb_id, args.language)
                 credits = fetch_movie_credits(tmdb, tmdb_id, args.language)
+                keywords = fetch_movie_keywords(tmdb, tmdb_id)
                 cast_member = find_cast_member(seed, credits)
 
-            rows.append((seed, movie, details, credits, cast_member))
+            rows.append((seed, movie, details, credits, cast_member, keywords))
             actor_text = cast_member.get("name") if cast_member else seed.actor_hint or "-"
             movie_text = details.get("title") if details else (movie.get("title") if movie else "-")
             print(f"[fetch] {index:02d}/50 {seed.name} | movie={movie_text} | actor={actor_text}")
@@ -377,10 +399,10 @@ def import_characters(args: argparse.Namespace) -> None:
             return
 
         with SessionLocal() as db:
-            for seed, movie_payload, details, credits, cast_member in rows:
+            for seed, movie_payload, details, credits, cast_member, keywords in rows:
                 movie_model = None
                 if movie_payload and details and credits:
-                    movie_model = upsert_movie(db, build_movie_row(movie_payload, details, credits, genre_map))
+                    movie_model = upsert_movie(db, build_movie_row(movie_payload, details, credits, genre_map, keywords))
                 upsert_character(db, seed, movie_model, cast_member)
             db.commit()
 

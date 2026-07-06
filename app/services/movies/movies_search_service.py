@@ -123,15 +123,17 @@ def search_movies_result(
         "state" : "success",
         "message" : "검색 성공",
         "data" : [
-            {
-                "movie_id" : movie.id,
-                "title" : movie.title,
-                "genres": movie.genres,
-                "director": movie.director,
-                "cast": movie.cast,
-                "year": movie.year,
-                "poster_path": movie.poster_path,
-                # "search_score": score,
-            } for movie, score in result
+            get_movie_result(movie)
+            for movie, score in result
         ]
+    }
+
+# 영화 결과 함수
+def get_movie_result(movie):
+    return {
+        "movie_id" : movie.id,
+        "title" : movie.title,
+        "genres": movie.genres,
+        "poster_path": movie.poster_path,
+        "vote_average" : movie.vote_average,
     }

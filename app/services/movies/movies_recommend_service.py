@@ -54,11 +54,7 @@ def get_user_recommend_movies_result(
     if not preferences:
         return base_movies[:limit]
     
-    target_preferences = [
-        preference
-        for preference in preferences
-        # if preference.preference_type in ("genre", "")
-    ]
+    # movies_id = [movie["movie_id"]]
     result = []
     # for movie in movies:
     #     result.append({

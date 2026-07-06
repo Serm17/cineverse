@@ -80,6 +80,13 @@ async def chat_character(
         # JWT 회원 정보에서 user_id를 가져온다.
         user_id = current_user["user_id"]
         # user_id = 1
+        return {
+            "state" : "success",
+            "message" : "1대1 캐릭터 챗 실패",
+            "data" : {
+                "character" : request.character
+            }
+        }
         return await start_character_chat(db, user_id, request)
     except HTTPException as e:
         db.rollback()
@@ -222,39 +229,40 @@ async def send_chat_message(
         }
 
 
-# # 채팅방 삭제 DELETE /chat/rooms/{room_id}?user_id=1
-# @router.delete("/rooms/{room_id}")
-# async def delete_chat_room(
-#     room_id: int,
-#     # current_user: dict = Depends(get_current_user),
-#     db: Session = Depends(get_db)
-#     ):
-#     try:
-#         # JWT 회원 정보에서 user_id를 가져온다.
-#         # user_id = current_user["user_id"]
-#         user_id = 1
+# 채팅방 삭제 DELETE /chat/rooms/{room_id}?user_id=1
+@router.delete("/rooms/{room_id}")
+async def delete_chat_room(
+    room_id: int,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db)
+    ):
+    try:
+        # JWT 회원 정보에서 user_id를 가져온다.
+        user_id = current_user["user_id"]
 
-#         # 사용자의 방인지 확인
-#         room = db.query(ChatRoom).filter(ChatRoom.id == room_id, ChatRoom.user_id == user_id).first()
+        # 사용자의 방인지 확인
+        room = db.query(ChatRoom).filter(ChatRoom.id == room_id, ChatRoom.user_id == user_id).first()
 
-#         if not room:
-#             return {
-#                 "state" : "failure",
-#                 "message" : "해당 채팅방이 존재하지 않습니다."
-#             }
+        # 해당 방이 없을 경우
+        if not room:
+            return {
+                "state" : "failure",
+                "message" : "해당 채팅방이 존재하지 않습니다."
+            }
         
-#         # 채팅방 삭제
-#         db.delete(room)
-#         db.commit()
+        # 채팅방 삭제
+        db.delete(room)
+        # 저장
+        db.commit()
 
-#         return {
-#             "state" : "success",
-#             "message" : "채팅방 삭제에 성공했습니다."
-#         }
-#     except Exception as e:
-#         db.rollback()
-#         return {
-#             "status": "error",
-#             "message": "채팅방 삭제 에러",
-#             "error": str(e)
-#         }
+        return {
+            "state" : "success",
+            "message" : "채팅방 삭제에 성공했습니다."
+        }
+    except Exception as e:
+        db.rollback()
+        return {
+            "status": "error",
+            "message": "채팅방 삭제 에러",
+            "error": str(e)
+        }

@@ -47,6 +47,23 @@ def movies_like_result(
 
     return like_movies
 
+# 최근 조회한 영화 목록
+def get_recently_viewed_movies_result(
+        db: Session,
+        user_id: int,
+        limit: int = 5,
+):
+    return db.scalars(
+        select(UserMovieInteraction)
+        .where(
+            UserMovieInteraction.user_id == user_id,
+            UserMovieInteraction.action_type == "view"
+        )
+        # 최신 순으로 정렬
+        .order_by(UserMovieInteraction.created_at.desc())
+        .limit(limit)
+    ).all()
+
 # 사용자가 이미 조회,검색,좋아요한 영화 ID 
 def get_candidate_movies(db: Session, user_id:int):
     interacted_movie_ids = select(UserMovieInteraction.movie.movie_id).where(UserMovieInteraction.user_id == user_id)

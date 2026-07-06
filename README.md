@@ -1,545 +1,161 @@
-# CineVerse API 명세서
+# CineVerse Backend
 
-이 문서는 현재 `app/main.py`에 최종 등록된 API 기준으로 정리한 README입니다.
+CineVerse 영화 추천/검색/채팅 서비스를 위한 FastAPI 백엔드입니다.
 
-- 기본 주소: `http://127.0.0.1:8080`
-- 실행 앱: `app.main:app`
-- 인증 방식: `Authorization: Bearer <access_token>`
-- Refresh Token 저장 위치: `refresh_token` HttpOnly Cookie
-- 공통 응답 상태값: `state` 또는 `status`가 `success`, `failure`, `error` 중 하나로 반환됩니다.
+## 주요 기능
 
-## 실행
+- JWT 기반 회원가입, 로그인, 토큰 재발급, 로그아웃
+- 영화 검색, 상세 조회, 랭킹, 장르별 조회, 좋아요
+- AI 서버 연동 일반 채팅, 그룹 채팅, 채팅방/메시지 조회
+- 사용자 선호 정보, 좋아요 영화, 최근 조회 영화 조회
+- TMDB 기반 영화/캐릭터 데이터 적재 및 키워드 백필 스크립트
+
+## 기술 스택
+
+- Python 3.14 이상
+- FastAPI
+- SQLAlchemy
+- Alembic
+- PostgreSQL
+- Pydantic Settings
+- python-jose JWT
+- httpx
+
+## 실행 준비
+
+가상환경을 만든 뒤 의존성을 설치합니다.
+
+```bash
+python -m venv .venv
+.venv/bin/python -m pip install -e .
+```
+
+환경변수 예시 파일을 복사해 로컬 `.env`를 만듭니다.
+
+```bash
+cp .env.example .env
+```
+
+`.env`에는 실제 비밀키와 API 키를 넣고, Git에는 올리지 않습니다.
+
+## 환경변수
+
+| 이름 | 설명 | 예시 |
+| --- | --- | --- |
+| `SECRET_KEY` | JWT access/refresh token 서명 비밀키 | `change-me-to-a-long-random-secret` |
+| `ALGORITHM` | JWT 서명 알고리즘 | `HS256` |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access Token 만료 시간(분) | `60` |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh Token 만료 시간(일) | `14` |
+| `BE2_BASE_URL` | BE2 서버 주소 | `http://127.0.0.1:8001` |
+| `AI_BASE_URL` | AI 서버 주소 | `http://210.109.15.251` |
+| `TMDB_API_KEY` | TMDB API 키 | `your-tmdb-api-key` |
+| `DATABASE_URL` | 키워드 백필 스크립트용 DB URL | `postgresql://postgres:1234@localhost:5432/CineVerse` |
+
+현재 앱의 기본 DB 연결 문자열은 [app/core/dependencies.py](/Users/apple/mainproject_musubi/app/core/dependencies.py)에 정의되어 있습니다.
+
+## 서버 실행
 
 ```bash
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080 --reload
 ```
 
-## 등록된 라우터
+기본 주소는 `http://127.0.0.1:8080`입니다.
 
-| 구분 | Prefix | 설명 |
+## 상태 확인 API
+
+| Method | Path | 설명 |
 | --- | --- | --- |
-| 상태 확인 | 없음 | 서버, DB, AI 서버 연결 확인 |
-| Auth | `/auth` | 회원가입, 로그인, 토큰 재발급, 로그아웃, 내 정보 조회 |
-| Users | `/users` | 내 선호 정보 저장 및 조회 |
-| Chat | `/chat` | AI 채팅, 채팅방 목록, 메시지 조회/전송, 채팅방 삭제 |
+| `GET` | `/` | API 실행 확인 |
+| `GET` | `/health` | 서버 상태 확인 |
+| `GET` | `/db-test` | PostgreSQL 연결 확인 |
+| `GET` | `/ai-health` | AI 서버 `/health` 연결 확인 |
 
-## 인증 규칙
+## Auth API
 
-로그인 성공 시 응답 본문으로 `access_token`이 반환되고, `refresh_token`은 HttpOnly Cookie에 저장됩니다.
+| Method | Path | 인증 | 설명 |
+| --- | --- | --- | --- |
+| `POST` | `/auth/register` | 없음 | 회원가입 |
+| `POST` | `/auth/login` | 없음 | 로그인, access token 반환 및 refresh token cookie 저장 |
+| `POST` | `/auth/refresh` | refresh cookie | access token 재발급 |
+| `POST` | `/auth/logout` | refresh cookie | refresh token 폐기 및 cookie 삭제 |
 
-회원 전용 API는 아래 헤더가 필요합니다.
+로그인 후 회원 전용 API에는 아래 헤더를 보냅니다.
 
 ```http
 Authorization: Bearer <access_token>
 ```
 
-Access Token이 만료되면 `POST /auth/refresh`를 호출해 새 Access Token을 발급받습니다. 이때 브라우저가 `/auth` 경로의 `refresh_token` 쿠키를 함께 보내야 합니다.
+## Movies API
 
-## 상태 확인 API
-
-### GET `/health`
-
-서버 실행 여부를 확인합니다.
-
-#### Response
-
-```json
-{
-  "message": "CineVerse"
-}
-```
-
-### GET `/db-test`
-
-PostgreSQL 연결 여부를 확인합니다.
-
-#### Success Response
-
-```json
-{
-  "status": "success",
-  "message": "PostgreSQL 연결 성공"
-}
-```
-
-#### Failure Response
-
-```json
-{
-  "status": "failure",
-  "message": "BE2 DB연결 API 호출 실패",
-  "error": "error message"
-}
-```
-
-### GET `/ai-health`
-
-설정된 AI 서버의 `/health` 엔드포인트 연결 여부를 확인합니다.
-
-#### Success Response
-
-```json
-{
-  "state": "success",
-  "message": "AI 서버 연결에 성공했습니다.",
-  "ai_base_url": "http://210.109.15.251",
-  "status_code": 200
-}
-```
-
-#### Error Response
-
-```json
-{
-  "state": "error",
-  "message": "AI 서버에 연결할 수 없습니다.",
-  "ai_base_url": "http://210.109.15.251",
-  "error": "error message"
-}
-```
-
-## Auth API
-
-### POST `/auth/register`
-
-회원가입을 처리합니다.
-
-#### Request Body
-
-```json
-{
-  "email": "user@example.com",
-  "password": "password1234",
-  "nickname": "cine"
-}
-```
-
-| 필드 | 타입 | 필수 | 설명 |
+| Method | Path | 인증 | 설명 |
 | --- | --- | --- | --- |
-| `email` | string | Y | 이메일 형식 |
-| `password` | string | Y | 비밀번호 |
-| `nickname` | string | Y | 닉네임 |
+| `POST` | `/movies/recommend?limit=12` | 없음 | 추천 영화 목록 |
+| `GET` | `/movies/search?keyword=...&page=1&limit=20` | 없음 | 영화 검색 |
+| `GET` | `/movies/ranking?limit=10` | 없음 | 실시간 랭킹 |
+| `GET` | `/movies/{movie_id}?source=direct` | 선택 | 영화 상세 조회, 로그인 사용자는 조회/검색 클릭 기록 저장 |
+| `POST` | `/movies/{movie_id}/like` | 필요 | 영화 좋아요 |
+| `GET` | `/movies/today/recommend` | 없음 | AI 오늘의 영화 추천 |
+| `GET` | `/movies/genre/{genre}?page=1&limit=20` | 없음 | 장르별 영화 조회 |
 
-#### Success Response
+## User API
 
-```json
-{
-  "status": "success",
-  "message": "회원가입 성공",
-  "data": {
-    "id": 1,
-    "email": "user@example.com",
-    "nickname": "cine"
-  }
-}
-```
-
-#### Failure Response
-
-```json
-{
-  "status": "failure",
-  "message": "회원가입 실패 - 이메일 중복"
-}
-```
-
-### POST `/auth/login`
-
-로그인을 처리하고 Access Token을 반환합니다. Refresh Token은 HttpOnly Cookie로 저장됩니다.
-
-#### Request Body
-
-```json
-{
-  "email": "user@example.com",
-  "password": "password1234"
-}
-```
-
-#### Success Response
-
-```json
-{
-  "state": "success",
-  "message": "로그인 성공",
-  "data": {
-    "access_token": "jwt.access.token",
-    "token_type": "bearer",
-    "email": "user@example.com",
-    "nickname": "cine"
-  }
-}
-```
-
-#### Cookie
-
-```http
-Set-Cookie: refresh_token=<refresh_token>; HttpOnly; Path=/auth; SameSite=lax
-```
-
-#### Failure Response
-
-```json
-{
-  "state": "failure",
-  "message": "해당 이메일은 가입된 회원이 아닙니다."
-}
-```
-
-```json
-{
-  "state": "failure",
-  "message": "해당 회원의 비밀번호가 일치하지 않습니다."
-}
-```
-
-### POST `/auth/refresh`
-
-Refresh Token Cookie를 검증하고 새 Access Token을 발급합니다.
-
-#### Request
-
-별도 body는 없습니다. `/auth` 경로의 `refresh_token` Cookie가 필요합니다.
-
-#### Success Response
-
-```json
-{
-  "state": "success",
-  "message": "토큰 재발급 성공",
-  "data": {
-    "access_token": "new.jwt.access.token",
-    "token_type": "bearer",
-    "email": "user@example.com"
-  }
-}
-```
-
-#### Failure Response
-
-```json
-{
-  "state": "failure",
-  "message": "refresh_token이 브라우저 내 쿠기에 없습니다."
-}
-```
-
-```json
-{
-  "state": "failure",
-  "message": "이미 로그아웃 처리된 refresh_token입니다."
-}
-```
-
-### POST `/auth/logout`
-
-Refresh Token을 폐기하고 브라우저 쿠키를 삭제합니다.
-
-#### Request
-
-별도 body는 없습니다. `refresh_token` Cookie가 있으면 DB에서 폐기 처리합니다.
-
-#### Success Response
-
-```json
-{
-  "state": "success",
-  "message": "로그아웃 성공",
-  "data": {
-    "detail": "클라이언트 쪽에서 access_token, refresh_token 삭제"
-  }
-}
-```
-
-### GET `/auth/me`
-
-현재 Access Token의 사용자 정보를 조회합니다.
-
-#### Auth
-
-필수
-
-#### Success Response
-
-```json
-{
-  "state": "success",
-  "message": "정보 조회 성공",
-  "data": {
-    "email": "user@example.com"
-  }
-}
-```
-
-#### Auth Error Response
-
-```json
-{
-  "detail": {
-    "state": "failure",
-    "message": "로그인이 필요합니다.",
-    "code": "LOGIN_REQUIRED"
-  }
-}
-```
-
-## Users API
-
-### PUT `/users/me/preferences`
-
-내 선호 정보를 저장합니다. 기존 `genre`, `actor`, `keyword` 선호값은 삭제 후 새 값으로 교체됩니다. 각 배열의 빈 문자열과 중복 값은 제거됩니다.
-
-#### Auth
-
-필수
-
-#### Request Body
-
-```json
-{
-  "genres": ["SF", "Action"],
-  "actors": ["Tom Hardy"],
-  "keywords": ["time travel", "space"]
-}
-```
-
-| 필드 | 타입 | 필수 | 기본값 | 설명 |
-| --- | --- | --- | --- | --- |
-| `genres` | string[] | N | `[]` | 선호 장르 |
-| `actors` | string[] | N | `[]` | 선호 배우 |
-| `keywords` | string[] | N | `[]` | 선호 키워드 |
-
-#### Success Response
-
-```json
-{
-  "state": "success",
-  "message": "선호 정보 저장 성공",
-  "data": {
-    "genres": ["SF", "Action"],
-    "actors": ["Tom Hardy"],
-    "keywords": ["time travel", "space"]
-  }
-}
-```
-
-### GET `/users/me/preferences`
-
-내 선호 정보를 조회합니다.
-
-#### Auth
-
-필수
-
-#### Success Response
-
-```json
-{
-  "state": "success",
-  "message": "선호 정보 조회 성공",
-  "data": {
-    "genres": ["SF", "Action"],
-    "actors": ["Tom Hardy"],
-    "keywords": ["time travel", "space"]
-  }
-}
-```
+| Method | Path | 인증 | 설명 |
+| --- | --- | --- | --- |
+| `GET` | `/user` | 필요 | 내 정보 조회 |
+| `GET` | `/user/preferences` | 필요 | 내 선호 정보 조회 |
+| `GET` | `/user/movies-like` | 필요 | 좋아요 누른 영화 조회 |
+| `GET` | `/user/recently-viewed?limit=5` | 필요 | 최근 상세 조회한 영화 조회 |
 
 ## Chat API
 
-현재 채팅 API는 코드상 `user_id = 1`로 고정되어 있습니다. 추후 JWT 연동 시 `get_current_user` 의존성을 다시 활성화하면 로그인 사용자 기준으로 동작합니다.
-
-AI 서버 호출 경로는 내부적으로 `POST {AI_BASE_URL}/chat/auto`를 사용합니다.
-
-프론트 전달용 상세 명세는 [`docs/chat-auto-api.md`](docs/chat-auto-api.md)를 참고하세요.
-
-### POST `/chat/auto`
-
-새 일반 채팅방을 만들고 AI 응답을 생성합니다.
-
-#### Request Body
-
-```json
-{
-  "message": "오늘 볼 만한 영화 추천해줘"
-}
-```
-
-| 필드 | 타입 | 필수 | 설명 |
+| Method | Path | 인증 | 설명 |
 | --- | --- | --- | --- |
-| `message` | string | Y | 사용자 입력 메시지. 최소 1자 |
+| `POST` | `/chat/auto` | 필요 | 일반 AI 채팅 시작 |
+| `GET` | `/chat/characters` | 없음 | 채팅 가능 캐릭터 조회 |
+| `POST` | `/chat` | 필요 | 1대1 캐릭터 채팅 |
+| `POST` | `/chat/group` | 필요 | 그룹 캐릭터 채팅 |
+| `GET` | `/chat/rooms` | 필요 | 내 채팅방 목록 조회 |
+| `GET` | `/chat/rooms/{room_id}/messages` | 필요 | 채팅방 메시지 조회 |
+| `POST` | `/chat/rooms/{room_id}/messages` | 필요 | 기존 채팅방에서 이어서 대화 |
+| `DELETE` | `/chat/rooms/{room_id}` | 필요 | 내 채팅방 삭제 |
 
-#### Success Response
+현재 `POST /chat` 1대1 캐릭터 채팅은 실제 서비스 호출 전에 임시 응답을 반환하는 상태입니다.
 
-```json
-{
-  "state": "success",
-  "message": "채팅 응답에 성공했습니다.",
-  "data": {
-    "room_id": 1,
-    "answer": "AI 답변",
-    "intent": "recommend",
-    "movies": []
-  }
-}
+## 데이터 스크립트
+
+TMDB 인기 영화 적재:
+
+```bash
+.venv/bin/python scripts/import_tmdb_popular_movies.py
 ```
 
-#### Failure Response
+CineVerse 캐릭터와 연결 영화 적재:
 
-```json
-{
-  "state": "failure",
-  "message": "내용을 입력해주세요."
-}
+```bash
+.venv/bin/python scripts/import_cineverse_characters.py
 ```
 
-### GET `/chat/rooms`
+로컬 DB의 영화 키워드 백필:
 
-사용자의 채팅방 목록을 최신 수정순으로 조회합니다.
-
-#### Success Response
-
-```json
-{
-  "state": "success",
-  "message": "채팅방 목록 조회에 성공했습니다.",
-  "data": [
-    {
-      "room_id": 1,
-      "room_type": "general",
-      "characters": [],
-      "created_at": "2026-07-01T10:00:00",
-      "updated_at": "2026-07-01T10:00:00"
-    }
-  ]
-}
+```bash
+.venv/bin/python scripts/backfill_movie_keywords.py --merge-existing
 ```
 
-### GET `/chat/rooms/{room_id}/messages`
+백필 스크립트는 기본적으로 localhost PostgreSQL만 수정하도록 방어 로직이 들어 있습니다. 먼저 확인하려면 `--dry-run`을 사용합니다.
 
-채팅방의 메시지 목록을 생성 시간 오름차순으로 조회합니다.
+## 최근 작업 내역
 
-#### Path Parameter
+- `/user` 라우터를 정리하고 내 정보, 선호 정보, 좋아요 영화, 최근 조회 영화 조회 API를 연결했습니다.
+- 영화 검색/좋아요/최근 조회 응답에서 공통 영화 응답 형태를 사용하도록 `get_movie_result`와 `ShowMovie`, `ShowMovies` 스키마를 추가했습니다.
+- 채팅방 삭제 API를 활성화하고 JWT 사용자 기준으로 본인 채팅방만 삭제하도록 확인 로직을 넣었습니다.
+- 영화 상세 조회 시 로그인 사용자의 `view`, `search_click` 상호작용이 저장되도록 API 흐름을 정리했습니다.
+- TMDB 캐릭터 적재 스크립트에서 영화 키워드를 함께 가져오도록 확장했습니다.
+- 기존 영화 데이터의 빈 키워드를 로컬 메타데이터 기반으로 채우는 `scripts/backfill_movie_keywords.py`를 추가했습니다.
+- 오늘의 AI 추천 요청 프롬프트가 짧은 답변을 요구하도록 조정했습니다.
+- 개발 실행 호스트를 `127.0.0.1:8080` 기준으로 맞추고 CORS 허용 origin을 로컬 프론트 주소 중심으로 정리했습니다.
 
-| 이름 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `room_id` | integer | Y | 채팅방 ID |
+## Git 저장 규칙
 
-#### Success Response
-
-```json
-{
-  "state": "success",
-  "message": "채팅 메시지 목록 조회에 성공했습니다.",
-  "data": [
-    {
-      "room_id": 1,
-      "role": "user",
-      "character": null,
-      "created_at": "2026-07-01T10:00:00",
-      "content": "오늘 볼 만한 영화 추천해줘"
-    },
-    {
-      "room_id": 1,
-      "role": "assistant",
-      "character": null,
-      "created_at": "2026-07-01T10:00:02",
-      "content": "AI 답변"
-    }
-  ]
-}
-```
-
-#### Failure Response
-
-```json
-{
-  "state": "failure",
-  "message": "해당 채팅방이 존재하지 않습니다."
-}
-```
-
-### POST `/chat/rooms/{room_id}/messages`
-
-기존 채팅방에 사용자 메시지를 보내고 AI 응답을 이어서 생성합니다.
-
-#### Path Parameter
-
-| 이름 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `room_id` | integer | Y | 채팅방 ID |
-
-#### Request Body
-
-```json
-{
-  "content": "비슷한 영화도 더 알려줘"
-}
-```
-
-| 필드 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `content` | string | Y | 사용자 입력 메시지. 최소 1자 |
-
-#### Success Response
-
-```json
-{
-  "state": "success",
-  "message": "채팅 응답에 성공했습니다.",
-  "data": {
-    "room_id": 1,
-    "answer": "AI 답변",
-    "intent": "recommend",
-    "movies": []
-  }
-}
-```
-
-#### Failure Response
-
-```json
-{
-  "state": "failure",
-  "message": "채팅방을 찾을 수 없습니다."
-}
-```
-
-### DELETE `/chat/rooms/{room_id}`
-
-채팅방을 삭제합니다. `ChatRoom` 모델의 관계 설정에 따라 해당 방의 메시지도 함께 삭제됩니다.
-
-#### Path Parameter
-
-| 이름 | 타입 | 필수 | 설명 |
-| --- | --- | --- | --- |
-| `room_id` | integer | Y | 채팅방 ID |
-
-#### Success Response
-
-```json
-{
-  "state": "success",
-  "message": "채팅방 삭제에 성공했습니다."
-}
-```
-
-#### Failure Response
-
-```json
-{
-  "state": "failure",
-  "message": "해당 채팅방이 존재하지 않습니다."
-}
-```
-
-## 현재 비활성 API
-
-`app/api/movies.py`에는 영화 관련 라우터가 작성되어 있지만, 현재 `app/main.py`에서 아래처럼 주석 처리되어 서버에 등록되지 않습니다.
-
-```python
-# from app.api.movies import router as movies_router
-# app.include_router(movies_router)
-```
-
-따라서 현재 실행 서버 기준 API 명세에는 `/movies` 엔드포인트를 포함하지 않습니다.
+- 실제 `.env`는 저장소에 올리지 않습니다.
+- 환경변수 공유는 `.env.example`을 사용합니다.
+- `.venv`, `outputs`, `external`, 캐시 파일은 Git에서 제외합니다.

@@ -48,12 +48,14 @@ class MovieDetailResponse(BaseModel):
     data: MovieDetailData | None = None
     error: str | None = None
 
-class RecommendMovie(BaseModel):
+class ShowMovie(BaseModel):
     movie_id: int
     title: str
     poster_path: str | None = None
     genres: list[str] | None = None
     vote_average: float | None = None
+
+class RecommendMovie(ShowMovie):
     recommendation_score: float
     reason: str
 
@@ -61,3 +63,8 @@ class RecommendResponse(BaseModel):
     state: str
     message: str
     data: list[RecommendMovie]
+
+class ShowMovies(BaseModel):
+    state : str
+    message : str
+    data : list[ShowMovie]
