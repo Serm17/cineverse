@@ -1,0 +1,12 @@
+.env
+.DS_Store
+.venv
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# 이전 Node 빌드의 로컬 산출물이 남아 있어도 버전 관리하지 않습니다.
+node_modules/
+dist/
+.claude/

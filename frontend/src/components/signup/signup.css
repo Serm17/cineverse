@@ -1,0 +1,18 @@
+.signup-form {
+  align-content: center;
+  gap: 14px;
+}
+
+.signup-page .login-form-panel {
+  gap: 24px;
+}
+
+.signup-page .login-showcase__copy h1 {
+  max-width: 520px;
+}
+
+@media (max-width: 680px) {
+  .signup-page .login-showcase__copy h1 {
+    font-size: 29px;
+  }
+}
