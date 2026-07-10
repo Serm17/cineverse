@@ -10,6 +10,7 @@ if (!BACKEND_BASE_URL) {
 
 const LOCAL_PROFILE_KEY = 'cineverse.localProfile';
 const LOCAL_PREFERENCES_KEY = 'cineverse.localPreferences';
+const AUTH_SESSION_KEY = 'cineverse.authSession';
 
 // AI/캐릭터 채팅에서 추천받은 영화를 마이페이지 추천과 잇기 위해 저장하는 키.
 const RECOMMENDED_MOVIES_KEY = 'cineverse.recommendedMovies';
@@ -205,6 +206,7 @@ export function getStoredAuthUser() {
 export function clearStoredAuth() {
   localStorage.removeItem('access_token');
   localStorage.removeItem('auth_user');
+  localStorage.removeItem(AUTH_SESSION_KEY);
   // 로그아웃 시 브라우저에 남는 대화 로그/캐시도 함께 삭제한다.
   clearChatCaches();
 }
@@ -224,6 +226,7 @@ function storeAuthSession({ accessToken, email, nickname, tokenType }) {
 
   localStorage.setItem('access_token', accessToken);
   localStorage.setItem('auth_user', JSON.stringify(user));
+  localStorage.setItem(AUTH_SESSION_KEY, crypto.randomUUID());
 
   return user;
 }
@@ -563,20 +566,6 @@ export async function deleteChatRoom(roomId, signal) {
   }
 
   return data || {};
-}
-
-// 배우대기실 기록 초기화. 로그아웃 전에 호출해야 인증된 사용자의 그룹 방을 삭제할 수 있다.
-export async function deleteGroupChatHistory(signal) {
-  const rooms = await fetchChatRooms(signal);
-  const groupRoomIds = rooms
-    .filter((room) => (room?.room_type || room?.roomType) === 'group')
-    .map((room) => room?.room_id ?? room?.roomId ?? room?.id)
-    .filter((roomId) => roomId !== undefined && roomId !== null && roomId !== '');
-
-  await Promise.all(groupRoomIds.map((roomId) => deleteChatRoom(roomId, signal)));
-  localStorage.removeItem('cineverse.groupchat.conversations');
-
-  return groupRoomIds.length;
 }
 
 export async function fetchCharacters(signal) {

@@ -4,7 +4,6 @@ import {
   addRecommendedMovies,
   deleteChatRoom,
   fetchChatRoomMessages,
-  fetchChatRooms,
   fetchCharacters,
   sendChat,
   sendRoomMessage,
@@ -17,6 +16,7 @@ import './chat.css';
 // 페이지 이동(새로고침) 없이 컴포넌트 상태로만 전환한다.
 // 사이드바 아래 대화 내역은 대화한 캐릭터들의 이름을 제목으로 보여준다.
 const STORAGE_KEY = 'cineverse.groupchat.conversations';
+const AUTH_SESSION_KEY = 'cineverse.authSession';
 
 const POSTER_BASE_URL =
   import.meta.env.VITE_TMDB_IMAGE_BASE_URL || 'https://image.tmdb.org/t/p/w500';
@@ -53,6 +53,14 @@ function readJson(key, fallback) {
   } catch (error) {
     return fallback;
   }
+}
+
+function readSessionConversations() {
+  const stored = readJson(STORAGE_KEY, null);
+  const sessionId = window.localStorage.getItem(AUTH_SESSION_KEY);
+
+  if (!sessionId || stored?.sessionId !== sessionId) return [];
+  return Array.isArray(stored.conversations) ? stored.conversations : [];
 }
 
 function orbGradient(seed) {
@@ -104,70 +112,6 @@ function createMember(name, characters = []) {
   };
 }
 
-function getRoomId(room) {
-  return room?.room_id ?? room?.roomId ?? room?.id ?? '';
-}
-
-function getRoomType(room) {
-  return room?.room_type || room?.roomType || '';
-}
-
-function getRoomMemberNames(room) {
-  return (Array.isArray(room?.characters) ? room.characters : [])
-    .map((character) =>
-      typeof character === 'string'
-        ? character
-        : character?.name || character?.character || ''
-    )
-    .map(normalizeName)
-    .filter(Boolean);
-}
-
-function buildConversationFromRoom(room, characters = []) {
-  const roomId = String(getRoomId(room));
-  const members = getRoomMemberNames(room).map((name) => createMember(name, characters));
-
-  return {
-    id: `room-${roomId}`,
-    title: members.map((member) => member.name).join(', ') || '그룹 대화',
-    members,
-    roomId,
-    createdAt: room?.created_at || room?.createdAt || new Date().toISOString(),
-    updatedAt: room?.updated_at || room?.updatedAt || room?.created_at || room?.createdAt || '',
-    messages: [],
-  };
-}
-
-function mergeRoomConversations(current, rooms, characters = []) {
-  const groupRooms = rooms.filter((room) => getRoomType(room) === 'group');
-  const serverConversations = groupRooms.map((room) =>
-    buildConversationFromRoom(room, characters)
-  );
-  const serverRoomIds = new Set(serverConversations.map((conversation) => conversation.roomId));
-  const currentByRoomId = new Map(
-    current
-      .filter((conversation) => conversation.roomId)
-      .map((conversation) => [String(conversation.roomId), conversation])
-  );
-
-  const mergedServerConversations = serverConversations.map((conversation) => {
-    const existing = currentByRoomId.get(String(conversation.roomId));
-
-    return {
-      ...conversation,
-      id: existing?.id || conversation.id,
-      messages: existing?.messages || [],
-    };
-  });
-
-  const localConversations = current.filter(
-    (conversation) =>
-      !conversation.roomId || !serverRoomIds.has(String(conversation.roomId))
-  );
-
-  return [...localConversations, ...mergedServerConversations];
-}
-
 function hydrateMembers(members, characters) {
   return (members || [])
     .map((member) => createMember(member?.name || member, characters))
@@ -207,7 +151,7 @@ function GroupChatPage() {
   const [characterLoadError, setCharacterLoadError] = useState('');
 
   // 대화 내역: 각 대화는 멤버(캐릭터들)를 갖고, 제목은 멤버 이름들이다.
-  const [conversations, setConversations] = useState(() => readJson(STORAGE_KEY, []));
+  const [conversations, setConversations] = useState(readSessionConversations);
   const [activeId, setActiveId] = useState('');
 
   const [isPickerOpen, setPickerOpen] = useState(false);
@@ -254,31 +198,14 @@ function GroupChatPage() {
   }, []);
 
   useEffect(() => {
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(conversations));
+    const sessionId = window.localStorage.getItem(AUTH_SESSION_KEY);
+    if (!sessionId) return;
+
+    window.localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ sessionId, conversations })
+    );
   }, [conversations]);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    fetchChatRooms(controller.signal)
-      .then((rooms) => {
-        if (controller.signal.aborted) return;
-
-        const groupRooms = rooms.filter((room) => getRoomType(room) === 'group');
-        const firstRoomId = getRoomId(groupRooms[0]);
-
-        setConversations((current) =>
-          mergeRoomConversations(current, groupRooms, characters)
-        );
-        setActiveId((current) => current || (firstRoomId ? `room-${firstRoomId}` : ''));
-      })
-      .catch((fetchError) => {
-        if (fetchError.name === 'AbortError') return;
-        setError(fetchError.message);
-      });
-
-    return () => controller.abort();
-  }, []);
 
   useEffect(() => {
     if (characters.length === 0) return;
@@ -298,7 +225,7 @@ function GroupChatPage() {
 
     // room 파라미터가 없으면, 저장된 대화가 있을 때 첫 대화를 자동 선택한다(재방문 시 빈 화면 방지).
     if (!roomParam) {
-      const stored = readJson(STORAGE_KEY, []);
+      const stored = readSessionConversations();
       if (stored.length > 0) {
         setActiveId((current) => current || stored[0].id);
       }
@@ -310,7 +237,7 @@ function GroupChatPage() {
       .map((name) => name.trim())
       .filter(Boolean);
 
-    const stored = readJson(STORAGE_KEY, []);
+    const stored = readSessionConversations();
     const existing = stored.find((c) => String(c.roomId) === String(roomParam));
 
     if (existing) {

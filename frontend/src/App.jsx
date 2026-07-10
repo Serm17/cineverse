@@ -12,7 +12,6 @@ import MyPage from './components/mypage/MyPage.jsx';
 
 import {
   clearStoredAuth,
-  deleteGroupChatHistory,
   getStoredAuthUser,
   logoutUser,
 } from '/src/api.js';
@@ -96,14 +95,6 @@ function App() {
   };
 
   const handleLogout = async () => {
-    try {
-      // 인증 토큰이 유효할 때 배우대기실의 서버 채팅방부터 삭제한다.
-      await deleteGroupChatHistory();
-    } catch (error) {
-      // 기록 삭제가 일부 실패해도 로그아웃 자체는 계속 진행한다.
-      console.error('배우대기실 기록 초기화 실패:', error);
-    }
-
     try {
       await logoutUser();
     } catch (error) {
