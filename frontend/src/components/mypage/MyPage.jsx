@@ -55,8 +55,7 @@ function getPoster(movie) {
 
   if (!path) return '';
   if (/^(https?:|data:|blob:)/i.test(path)) return path;
-  if (path.startsWith('/')) return `${POSTER_BASE_URL}${path}`;
-  return path;
+  return `${POSTER_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 function getMovieGenre(movie) {
@@ -355,12 +354,16 @@ function MyPage({ authUser, onUserUpdate }) {
     }
 
     try {
-      await updateProfileImage(file);
-      // 이전 미리보기 URL 정리 후 새 미리보기 설정
+      const result = await updateProfileImage(file);
+      const uploadedImage = result?.user_profile || '';
+      // 이전 미리보기 URL 정리 후 서버 URL(없으면 로컬 미리보기)로 갱신
       setAvatarPreview((current) => {
         if (current) URL.revokeObjectURL(current);
-        return URL.createObjectURL(file);
+        return uploadedImage || URL.createObjectURL(file);
       });
+      if (uploadedImage) {
+        setProfile((current) => ({ ...current, profile_image: uploadedImage }));
+      }
       setStatusMessage('프로필 이미지를 변경했습니다.');
     } catch (error) {
       setStatusMessage(error.message);

@@ -6,9 +6,7 @@ function toPosterUrl(value) {
 
   if (!path) return '';
   if (/^(https?:|data:|blob:)/i.test(path)) return path;
-  if (path.startsWith('/')) return `${POSTER_BASE_URL}${path}`;
-
-  return path;
+  return `${POSTER_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 function PosterArt({ movie, compact = false }) {

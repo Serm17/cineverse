@@ -7,6 +7,7 @@ import GroupChatPage from '/src/components/chat/GroupChatPage.jsx';
 import Recommendation from '/src/components/recomendation/recomendation.jsx';
 import IndexPage from './components/index/index.jsx';
 import LoginPage from './components/login/LoginPage.jsx';
+import PasswordResetPage from './components/login/PasswordResetPage.jsx';
 import SignupPage from './components/signup/SignupPage.jsx';
 import MyPage from './components/mypage/MyPage.jsx';
 
@@ -80,6 +81,10 @@ function App() {
     pathname.startsWith('/components/signup/SignupPage') ||
     pathname.startsWith('/signup');
 
+  const isPasswordResetPage =
+    pathname.startsWith('/password-reset') ||
+    pathname.startsWith('/reset-password');
+
   const isRecomendationPage =
     pathname.startsWith('/components/recomendation/recomendation') ||
     pathname.startsWith('/recomendation') ||
@@ -128,6 +133,8 @@ function App() {
         <ChatPage />
       ) : isLoginPage ? (
         <LoginPage onLogin={handleLogin} />
+      ) : isPasswordResetPage ? (
+        <PasswordResetPage />
       ) : isSignupPage ? (
         <SignupPage />
       ) : isRecomendationPage ? (

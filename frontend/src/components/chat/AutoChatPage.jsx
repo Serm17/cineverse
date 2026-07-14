@@ -6,7 +6,6 @@ import {
   fetchCharacter,
   fetchChatRoomMessages,
   sendChat,
-  sendRoomMessage,
 } from '../../api.js';
 
 import './chat.css';
@@ -75,9 +74,7 @@ function toPosterUrl(value) {
 
   if (!path) return '';
   if (/^(https?:|data:|blob:)/i.test(path)) return path;
-  if (path.startsWith('/')) return `${POSTER_BASE_URL}${path}`;
-
-  return path;
+  return `${POSTER_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 function getMoviePoster(movie) {
@@ -359,10 +356,9 @@ function AutoChatPage() {
     abortRef.current = controller;
 
     try {
-      // character 없이 보내면 api.js가 /chat/auto 로 요청한다. 이어지는 대화는 방(roomId) 기준.
-      const response = roomId
-        ? await sendRoomMessage(roomId, { message: content }, controller.signal)
-        : await sendChat({ message: content }, controller.signal);
+      // 현재 백엔드는 general 방의 이어 말하기를 지원하지 않아
+      // 일반 AI 메시지는 항상 /chat/auto로 전송한다.
+      const response = await sendChat({ message: content }, controller.signal);
 
       if (response?.conversationId) {
         updateConversation(conversationId, (conversation) => ({

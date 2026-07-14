@@ -1,12 +1,6 @@
-const BACKEND_BASE_URL = import.meta.env.DEV
-  ? '/be'
-  : import.meta.env.VITE_API_BASE_URL;
-
-if (!BACKEND_BASE_URL) {
-  throw new Error(
-    'VITE_API_BASE_URL이 설정되지 않았습니다. frontend/.env에 백엔드 주소를 지정하세요.'
-  );
-}
+const BACKEND_BASE_URL = (
+  import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080'
+).replace(/\/+$/, '');
 
 const LOCAL_PROFILE_KEY = 'cineverse.localProfile';
 const LOCAL_PREFERENCES_KEY = 'cineverse.localPreferences';
@@ -66,6 +60,17 @@ const FALLBACK_GENRES = [
   '스릴러',
   '애니메이션',
 ];
+const TMDB_IMAGE_BASE_URL =
+  import.meta.env.VITE_TMDB_IMAGE_BASE_URL || 'https://image.tmdb.org/t/p/w500';
+
+export function resolveMovieImage(path) {
+  const value = String(path || '').trim();
+
+  if (!value) return '';
+  if (/^(https?:|data:|blob:)/i.test(value)) return value;
+
+  return `${TMDB_IMAGE_BASE_URL}${value.startsWith('/') ? value : `/${value}`}`;
+}
 
 function readLocalJson(key, fallback = null) {
   try {
@@ -94,8 +99,15 @@ function getArrayPayload(data, ...keys) {
 }
 
 function getErrorMessage(data, fallbackMessage) {
+  const validationMessage = Array.isArray(data?.detail)
+    ? data.detail.map((item) => item?.msg).filter(Boolean).join(', ')
+    : '';
+  const detailMessage = typeof data?.detail === 'string' ? data.detail : '';
+
   return (
     data?.detail?.message ||
+    validationMessage ||
+    detailMessage ||
     data?.message ||
     // 백엔드 응답 필드 오타(messaage/messsage) 대응 — 프론트는 message로 통일해서 읽는다.
     data?.messaage ||
@@ -107,7 +119,11 @@ function getErrorMessage(data, fallbackMessage) {
 
 // 일부 에러 응답은 state 대신 status로 오므로 둘 다 확인한다.
 function getResponseState(data) {
-  return data?.state ?? data?.status;
+  return data?.detail?.state ?? data?.state ?? data?.status;
+}
+
+function isFailureResponse(data) {
+  return ['failure', 'fail', 'error'].includes(getResponseState(data));
 }
 
 function clampNumber(value, min, max, fallback) {
@@ -117,6 +133,8 @@ function clampNumber(value, min, max, fallback) {
 
   return Math.min(max, Math.max(min, number));
 }
+
+let refreshPromise = null;
 
 export async function fetchWithAuth(url, options = {}, allowRefreshRetry = true) {
   const token = localStorage.getItem('access_token');
@@ -129,15 +147,32 @@ export async function fetchWithAuth(url, options = {}, allowRefreshRetry = true)
   const response = await fetch(url, {
     // /auth, /chat, /user 응답은 캐시하지 않는다(백엔드 no-store 헤더와 맞춤). 호출부가 지정하면 그 값 우선.
     cache: 'no-store',
+    credentials: 'include',
     ...options,
     headers,
   });
 
-  // 액세스 토큰 만료(401)면 /auth/refresh 로 재발급 후 1회 재시도한다.
-  // 로그인 상태(token 존재)에서만 시도하고, 재발급 실패 시 원래 401 응답을 그대로 돌려준다.
-  if (response.status === 401 && allowRefreshRetry && token) {
+  // 명세의 ACCESS_TOKEN_EXPIRED인 401에서만 재발급 후 원 요청을 1회 재시도한다.
+  if (response.status === 401 && token) {
+    const errorBody = await response.clone().json().catch(() => null);
+    const errorCode = errorBody?.detail?.code ?? errorBody?.code;
+
+    if (errorCode !== 'ACCESS_TOKEN_EXPIRED' || !allowRefreshRetry) {
+      if (
+        [
+          'INVALID_ACCESS_TOKEN',
+          'INVALID_TOKEN_TYPE',
+          'INVALID_TOKEN_PAYLOAD',
+          'INVALID_AUTH_SCHEME',
+        ].includes(errorCode)
+      ) {
+        clearStoredAuth();
+      }
+      return response;
+    }
+
     try {
-      await refreshAccessToken(options.signal);
+      await refreshAccessToken();
     } catch (refreshError) {
       return response;
     }
@@ -148,13 +183,11 @@ export async function fetchWithAuth(url, options = {}, allowRefreshRetry = true)
   return response;
 }
 
-// 액세스 토큰 재발급 (POST /auth/refresh, 쿠키 기반 refresh token). 실패 시 세션을 정리한다.
-export async function refreshAccessToken(signal) {
+async function performAccessTokenRefresh() {
   const response = await fetch(`${BACKEND_BASE_URL}/auth/refresh`, {
     method: 'POST',
     credentials: 'include',
     cache: 'no-store',
-    signal,
   });
   const data = await response.json().catch(() => null);
 
@@ -188,6 +221,17 @@ export async function refreshAccessToken(signal) {
   localStorage.setItem('auth_user', JSON.stringify(user));
 
   return user;
+}
+
+// 동시에 여러 요청이 만료되어도 refresh 요청은 하나만 수행한다.
+export async function refreshAccessToken() {
+  if (!refreshPromise) {
+    refreshPromise = performAccessTokenRefresh().finally(() => {
+      refreshPromise = null;
+    });
+  }
+
+  return refreshPromise;
 }
 
 export function getStoredAuthUser() {
@@ -243,7 +287,7 @@ export async function loginWithEmail({ email, password }, signal) {
 
   const data = await response.json().catch(() => null);
 
-  if (!response.ok || data?.state !== 'success') {
+  if (!response.ok || getResponseState(data) !== 'success') {
     throw new Error(getErrorMessage(data, `로그인 실패 (${response.status})`));
   }
 
@@ -261,23 +305,86 @@ export async function loginWithEmail({ email, password }, signal) {
   });
 }
 
-export async function registerWithEmail({ email, password, nickname }, signal) {
+export async function requestEmailVerification(email, signal) {
+  const response = await fetch(`${BACKEND_BASE_URL}/auth/email-verification/request`, {
+    method: 'POST',
+    credentials: 'include',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+    signal,
+  });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || getResponseState(data) !== 'success') {
+    throw new Error(getErrorMessage(data, `인증번호 전송 실패 (${response.status})`));
+  }
+
+  return data?.data || {};
+}
+
+export async function registerWithEmail(
+  { email, password, nickname, verificationCode, verification_code },
+  signal
+) {
+  const code = verificationCode ?? verification_code;
   const response = await fetch(`${BACKEND_BASE_URL}/auth/register`, {
     method: 'POST',
     credentials: 'include',
     cache: 'no-store',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ email, password, nickname }),
+    body: JSON.stringify({
+      email,
+      password,
+      nickname,
+      verification_code: code,
+    }),
     signal,
   });
 
   const data = await response.json().catch(() => null);
 
-  if (!response.ok || data?.status !== 'success') {
+  if (!response.ok || getResponseState(data) !== 'success') {
     throw new Error(getErrorMessage(data, `회원가입 실패 (${response.status})`));
   }
 
   return data?.data || null;
+}
+
+export async function requestPasswordReset(email, signal) {
+  const response = await fetch(`${BACKEND_BASE_URL}/auth/password-reset/request`, {
+    method: 'POST',
+    credentials: 'include',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email }),
+    signal,
+  });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || getResponseState(data) !== 'success') {
+    throw new Error(getErrorMessage(data, `비밀번호 재설정 요청 실패 (${response.status})`));
+  }
+
+  return data || {};
+}
+
+export async function confirmPasswordReset(token, newPassword, signal) {
+  const response = await fetch(`${BACKEND_BASE_URL}/auth/password-reset/confirm`, {
+    method: 'POST',
+    credentials: 'include',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ token, new_password: newPassword }),
+    signal,
+  });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || getResponseState(data) !== 'success') {
+    throw new Error(getErrorMessage(data, `비밀번호 변경 실패 (${response.status})`));
+  }
+
+  return data || {};
 }
 
 export async function logoutUser(signal) {
@@ -289,7 +396,7 @@ export async function logoutUser(signal) {
 
   const data = await response.json().catch(() => null);
 
-  if (!response.ok || data?.state !== 'success') {
+  if (!response.ok || getResponseState(data) !== 'success') {
     throw new Error(getErrorMessage(data, `로그아웃 실패 (${response.status})`));
   }
 
@@ -302,8 +409,23 @@ export async function checkBackendHealth(signal) {
   const response = await fetchWithAuth(`${BACKEND_BASE_URL}/health`, { signal });
   const data = await response.json().catch(() => null);
 
-  if (!response.ok) {
+  if (!response.ok || getResponseState(data) !== 'success') {
     throw new Error(getErrorMessage(data, `백엔드 연결 실패 (${response.status})`));
+  }
+
+  return data;
+}
+
+export async function checkApiStatus(signal) {
+  const response = await fetch(`${BACKEND_BASE_URL}/`, {
+    credentials: 'include',
+    cache: 'no-store',
+    signal,
+  });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || getResponseState(data) !== 'success') {
+    throw new Error(getErrorMessage(data, `API 연결 실패 (${response.status})`));
   }
 
   return data;
@@ -313,7 +435,7 @@ export async function checkAiHealth(signal) {
   const response = await fetchWithAuth(`${BACKEND_BASE_URL}/ai-health`, { signal });
   const data = await response.json().catch(() => null);
 
-  if (!response.ok || data?.state !== 'success') {
+  if (!response.ok || getResponseState(data) !== 'success') {
     throw new Error(getErrorMessage(data, `AI 서버 연결 실패 (${response.status})`));
   }
 
@@ -324,7 +446,7 @@ export async function checkDbHealth(signal) {
   const response = await fetchWithAuth(`${BACKEND_BASE_URL}/db-test`, { signal });
   const data = await response.json().catch(() => null);
 
-  if (!response.ok || data?.status !== 'success') {
+  if (!response.ok || getResponseState(data) !== 'success') {
     throw new Error(getErrorMessage(data, `DB 연결 실패 (${response.status})`));
   }
 
@@ -354,9 +476,13 @@ function normalizeChatResponse(json, request) {
   };
 }
 
-export async function sendChat(request, signal) {
+export async function sendChat(request, signal, onChunk) {
   const isGroup = request.mode === 'group';
   const isAuto = !isGroup && !request.character;
+
+  if (!isGroup && !isAuto) {
+    return sendCharacterChatStream(request, signal, onChunk);
+  }
 
   let url = `${BACKEND_BASE_URL}/chat`;
   let body = {
@@ -386,12 +512,7 @@ export async function sendChat(request, signal) {
 
   const data = await response.json().catch(() => null);
 
-  if (
-    !response.ok ||
-    data?.state === 'failure' ||
-    data?.state === 'fail' ||
-    data?.state === 'error'
-  ) {
+  if (!response.ok || isFailureResponse(data)) {
     throw new Error(getErrorMessage(data, `채팅 요청 실패 (${response.status})`));
   }
 
@@ -417,30 +538,58 @@ function getStreamText(payload) {
   );
 }
 
-// 캐릭터 1:1 대화 전용 스트림 API. SSE, NDJSON, 일반 텍스트 스트림을 모두 읽는다.
+function parseStreamPayload(raw) {
+  try {
+    return JSON.parse(raw);
+  } catch (error) {
+    return raw;
+  }
+}
+
+// POST /chat과 POST /chat/rooms/{id}/messages는 성공 시 SSE, 실패 시 JSON을 반환한다.
 export async function sendCharacterChatStream(request, signal, onChunk) {
-  const response = await fetchWithAuth(`${BACKEND_BASE_URL}/chat/stream`, {
+  const isExistingRoom = request.roomId !== undefined && request.roomId !== null && request.roomId !== '';
+  const url = isExistingRoom
+    ? `${BACKEND_BASE_URL}/chat/rooms/${request.roomId}/messages`
+    : `${BACKEND_BASE_URL}/chat`;
+  const body = isExistingRoom
+    ? {
+        content: request.message,
+        character: request.character ?? null,
+      }
+    : {
+        message: request.message,
+        character: request.character,
+      };
+  const response = await fetchWithAuth(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Accept: 'text/event-stream, application/x-ndjson, application/json',
+      Accept: 'text/event-stream, application/json',
     },
-    body: JSON.stringify({
-      message: request.message,
-      character: request.character,
-      ...(request.roomId ? { room_id: request.roomId } : {}),
-    }),
+    body: JSON.stringify(body),
     signal,
   });
 
-  if (!response.ok) {
+  const contentType = response.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
     const data = await response.json().catch(() => null);
-    throw new Error(getErrorMessage(data, `스트림 채팅 요청 실패 (${response.status})`));
+
+    if (!response.ok || isFailureResponse(data)) {
+      throw new Error(getErrorMessage(data, `스트림 채팅 요청 실패 (${response.status})`));
+    }
+
+    return normalizeChatResponse(data, request);
+  }
+
+  if (!response.ok) {
+    const message = await response.text().catch(() => '');
+    throw new Error(message || `스트림 채팅 요청 실패 (${response.status})`);
   }
 
   if (!response.body) {
-    const data = await response.json().catch(() => null);
-    return normalizeChatResponse(data, request);
+    throw new Error('채팅 스트림 본문이 없습니다.');
   }
 
   const reader = response.body.getReader();
@@ -449,83 +598,91 @@ export async function sendCharacterChatStream(request, signal, onChunk) {
   let answer = '';
   let finalPayload = null;
 
-  const consumeLine = (rawLine) => {
-    const line = rawLine.trim();
-    if (!line || line.startsWith(':') || line.startsWith('event:')) return;
+  const consumeEvent = (rawEvent) => {
+    const dataLines = rawEvent
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith('data:'))
+      .map((line) => line.slice(5).trim());
 
-    const value = line.startsWith('data:') ? line.slice(5).trim() : line;
-    if (!value || value === '[DONE]') return;
+    for (const raw of dataLines) {
+      if (!raw) continue;
+      if (raw === '[DONE]') return true;
 
-    let payload = value;
-    try {
-      payload = JSON.parse(value);
+      const payload = parseStreamPayload(raw);
       finalPayload = payload;
-    } catch (error) {
-      // JSON이 아닌 서버는 받은 문자열 자체를 토큰으로 취급한다.
+      const chunk = String(getStreamText(payload) || '');
+      if (!chunk) continue;
+
+      // AI 서버가 누적 답변을 보내는 경우와 토큰만 보내는 경우를 모두 지원한다.
+      answer = chunk.startsWith(answer) ? chunk : answer + chunk;
+      onChunk?.(answer, payload);
     }
 
-    const chunk = String(getStreamText(payload) || '');
-    if (!chunk) return;
-
-    // 일부 서버는 누적 본문을, 일부 서버는 새 토큰만 보낸다.
-    answer = chunk.startsWith(answer) ? chunk : answer + chunk;
-    onChunk?.(answer, payload);
+    return false;
   };
 
+  let streamDone = false;
   while (true) {
     // eslint-disable-next-line no-await-in-loop
     const { value, done } = await reader.read();
     buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
 
-    const lines = buffer.split(/\r?\n/);
-    buffer = done ? '' : lines.pop() || '';
-    lines.forEach(consumeLine);
+    const events = buffer.split(/\r?\n\r?\n/);
+    buffer = events.pop() || '';
 
-    if (done) {
-      if (buffer.trim()) consumeLine(buffer);
-      break;
+    for (const event of events) {
+      if (consumeEvent(event)) {
+        streamDone = true;
+        break;
+      }
+    }
+
+    if (streamDone || done) break;
+  }
+
+  if (!streamDone && buffer.trim()) consumeEvent(buffer);
+
+  const normalized = normalizeChatResponse(finalPayload, request);
+  let conversationId = normalized.conversationId;
+
+  // 신규 1:1 SSE에는 room_id가 없으므로 종료 후 최신 캐릭터 방을 다시 조회한다.
+  if (!isExistingRoom && !conversationId) {
+    try {
+      const rooms = await fetchChatRooms(signal);
+      const latestRoom = rooms.find(
+        (room) =>
+          room?.room_type === 'character' &&
+          room?.characters?.some((name) => name === request.character)
+      ) || rooms.find((room) => room?.room_type === 'character');
+      conversationId =
+        latestRoom?.room_id === undefined || latestRoom?.room_id === null
+          ? ''
+          : String(latestRoom.room_id);
+    } catch (error) {
+      // 방 ID 보조 조회가 실패해도 이미 완료된 스트림 답변은 유지한다.
     }
   }
 
-  const normalized = normalizeChatResponse(finalPayload, request);
   return {
     ...normalized,
+    conversationId,
     answer: answer || normalized.answer,
   };
 }
 
-export async function sendRoomMessage(roomId, request, signal) {
-  const response = await fetchWithAuth(`${BACKEND_BASE_URL}/chat/rooms/${roomId}/messages`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ content: request.message }),
+export async function sendRoomMessage(roomId, request, signal, onChunk) {
+  return sendCharacterChatStream(
+    { ...request, roomId, character: request.character ?? null },
     signal,
-  });
-
-  const data = await response.json().catch(() => null);
-
-  if (
-    !response.ok ||
-    data?.state === 'failure' ||
-    data?.state === 'fail' ||
-    data?.state === 'error'
-  ) {
-    throw new Error(getErrorMessage(data, `이어 말하기 요청 실패 (${response.status})`));
-  }
-
-  return normalizeChatResponse(data, request);
+    onChunk
+  );
 }
 
 export async function fetchChatRoomMessages(roomId, signal) {
   const response = await fetchWithAuth(`${BACKEND_BASE_URL}/chat/rooms/${roomId}/messages`, { signal });
   const data = await response.json().catch(() => null);
 
-  if (
-    !response.ok ||
-    data?.state === 'failure' ||
-    data?.state === 'fail' ||
-    data?.state === 'error'
-  ) {
+  if (!response.ok || isFailureResponse(data)) {
     throw new Error(getErrorMessage(data, `채팅 메시지 목록 요청 실패 (${response.status})`));
   }
 
@@ -572,7 +729,7 @@ export async function fetchCharacters(signal) {
   const response = await fetchWithAuth(`${BACKEND_BASE_URL}/chat/characters`, { signal });
   const data = await response.json().catch(() => null);
 
-  if (!response.ok) {
+  if (!response.ok || isFailureResponse(data)) {
     throw new Error(getErrorMessage(data, `캐릭터 목록 요청 실패 (${response.status})`));
   }
 
@@ -620,10 +777,7 @@ export async function fetchCharacter(characterName, signal) {
   };
 }
 
-const ACTOR_PROFILE_BASE_URL =
-  import.meta.env.VITE_TMDB_IMAGE_BASE_URL || 'https://image.tmdb.org/t/p/w500';
-
-// 배우 목록 조회 API (GET /actors) — 백엔드는 만들지 않고 프론트에서 연결만 한다.
+// 배우 목록 조회 API (GET /movies/actors).
 // 명세서: { state, message, data: [{ actor_id, actor_name, profile_path }] }
 export async function fetchActors(signal) {
   const response = await fetchWithAuth(`${BACKEND_BASE_URL}/movies/actors`, { signal });
@@ -643,7 +797,7 @@ export async function fetchActors(signal) {
     const image = path
       ? path.startsWith('http')
         ? path
-        : `${ACTOR_PROFILE_BASE_URL}${path}`
+        : resolveMovieImage(path)
       : '';
 
     return {
@@ -708,7 +862,7 @@ export async function getRecommendMovies(limit = 12, signal) {
   const params = new URLSearchParams({
     limit: String(clampNumber(limit, 1, 30, 12)),
   });
-  const response = await fetch(`${BACKEND_BASE_URL}/movies/recommend?${params}`, {
+  const response = await fetchWithAuth(`${BACKEND_BASE_URL}/movies/recommend?${params}`, {
     method: 'POST',
     signal,
   });
@@ -752,22 +906,25 @@ export async function fetchMovies(signal, keyword = '', { page = 1, limit } = {}
   });
   const data = await response.json().catch(() => null);
 
-  if (data?.state === 'failure') {
+  if (getResponseState(data) === 'failure') {
     return [];
   }
 
-  if (!response.ok) {
+  if (!response.ok || getResponseState(data) === 'error') {
     throw new Error(getErrorMessage(data, `영화 목록 요청 실패 (${response.status})`));
   }
 
   return getArrayPayload(data, 'movies', 'results', 'items');
 }
 
-export async function fetchMovieRanking(signal) {
-  const response = await fetchWithAuth(`${BACKEND_BASE_URL}/movies/ranking`, { signal });
+export async function fetchMovieRanking(signal, limit = 10) {
+  const params = new URLSearchParams({
+    limit: String(clampNumber(limit, 1, 100, 10)),
+  });
+  const response = await fetchWithAuth(`${BACKEND_BASE_URL}/movies/ranking?${params}`, { signal });
   const data = await response.json().catch(() => null);
 
-  if (!response.ok) {
+  if (!response.ok || isFailureResponse(data)) {
     throw new Error(getErrorMessage(data, `실시간 랭킹 요청 실패 (${response.status})`));
   }
 
@@ -802,6 +959,49 @@ export async function fetchMovieDetail(movieId, source = 'direct', signal) {
   }
 
   return data?.data || null;
+}
+
+export async function fetchMoviesByGenre(genre, signal, { page = 1, limit = 20 } = {}) {
+  const params = new URLSearchParams({
+    page: String(clampNumber(page, 1, Number.MAX_SAFE_INTEGER, 1)),
+    limit: String(clampNumber(limit, 1, 50, 20)),
+  });
+  const response = await fetch(
+    `${BACKEND_BASE_URL}/movies/genre/${encodeURIComponent(genre)}?${params}`,
+    { credentials: 'include', cache: 'no-store', signal }
+  );
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || getResponseState(data) === 'error') {
+    throw new Error(getErrorMessage(data, `장르별 영화 조회 실패 (${response.status})`));
+  }
+
+  return getArrayPayload(data, 'movies');
+}
+
+export async function requestAiMovieRecommendation(
+  { userId, user_id, prompt = null, genres = [] },
+  signal
+) {
+  const response = await fetch(`${BACKEND_BASE_URL}/movies/ai-recommend`, {
+    method: 'POST',
+    credentials: 'include',
+    cache: 'no-store',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      user_id: userId ?? user_id,
+      prompt,
+      genres,
+    }),
+    signal,
+  });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || isFailureResponse(data)) {
+    throw new Error(getErrorMessage(data, `AI 영화 추천 실패 (${response.status})`));
+  }
+
+  return data?.data || {};
 }
 
 
@@ -897,7 +1097,7 @@ export async function likeMovie(movieId, signal) {
 
   const data = await response.json().catch(() => null);
 
-  if (!response.ok) {
+  if (!response.ok || isFailureResponse(data)) {
     throw new Error(getErrorMessage(data, `좋아요 요청 실패 (${response.status})`));
   }
 
@@ -916,19 +1116,22 @@ export async function fetchUserPreferences(signal) {
 
   const data = await response.json().catch(() => null);
 
-  if (!response.ok || getResponseState(data) === 'error') {
+  if (!response.ok || isFailureResponse(data)) {
     throw new Error(
       getErrorMessage(data, `취향 정보 요청 실패 (${response.status})`)
     );
   }
 
-  // 서버 응답: { preferred_genres, preferred_actors, preferred_keywords }
-  // → 프론트에서 쓰는 { preferences: { genres, actors, directors, keywords } } 형태로 매핑.
+  // 명세의 explicit_preferences를 현재 UI가 쓰는 preferences 형태로 함께 노출한다.
   const serverData = data?.data || data || {};
+  const explicitPreferences = serverData.explicit_preferences || {};
   const serverPreferences = {
-    genres: serverData.preferred_genres || serverData.genres || [],
-    actors: serverData.preferred_actors || serverData.actors || [],
-    keywords: serverData.preferred_keywords || serverData.keywords || [],
+    genres:
+      explicitPreferences.genres || serverData.preferred_genres || serverData.genres || [],
+    actors:
+      explicitPreferences.actors || serverData.preferred_actors || serverData.actors || [],
+    keywords:
+      explicitPreferences.keywords || serverData.preferred_keywords || serverData.keywords || [],
     directors: serverData.preferred_directors || serverData.directors || [],
   };
 
@@ -949,7 +1152,7 @@ export async function fetchUserProfile(signal) {
   });
   const data = await response.json().catch(() => null);
 
-  if (!response.ok || getResponseState(data) === 'error') {
+  if (!response.ok || isFailureResponse(data)) {
     throw new Error(getErrorMessage(data, `프로필 정보를 불러오지 못했습니다. (${response.status})`));
   }
 
@@ -1087,7 +1290,7 @@ export async function fetchAiRecommendation(signal) {
   });
   const data = await response.json().catch(() => null);
 
-  if (!response.ok) {
+  if (!response.ok || isFailureResponse(data)) {
     throw new Error(getErrorMessage(data, `AI 추천 요청 실패 (${response.status})`));
   }
 

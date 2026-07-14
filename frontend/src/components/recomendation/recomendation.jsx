@@ -24,6 +24,14 @@ function getItemsPerRow() {
   return 7;
 }
 
+function normalizeSearchValue(value) {
+  return String(value || '').toLowerCase();
+}
+
+function compactSearchValue(value) {
+  return normalizeSearchValue(value).replace(/\s+/g, '');
+}
+
 function Recommendation({ authUser }) {
   const queryParams = new URLSearchParams(window.location.search);
 
@@ -93,22 +101,29 @@ function Recommendation({ authUser }) {
   const filteredMovies = useMemo(() => {
     if (!isRecentView) return movies;
 
-    const keyword = searchText.trim().toLowerCase();
+    const keyword = normalizeSearchValue(searchText).trim();
+    const compactKeyword = compactSearchValue(searchText);
 
     if (!keyword) return movies;
 
     return movies.filter((movie) => {
-      const title = String(movie.title || '').toLowerCase();
-      const genre = String(movie.genre || '').toLowerCase();
+      const title = normalizeSearchValue(movie.title);
+      const genre = normalizeSearchValue(movie.genre);
       // 출연진(배우) 이름도 검색 대상에 포함해, 배우명을 치면 그 배우의 필모가 뜨게 한다.
-      const cast = (Array.isArray(movie.cast) ? movie.cast : [])
-        .join(', ')
-        .toLowerCase();
+      const cast = normalizeSearchValue(
+        (Array.isArray(movie.cast) ? movie.cast : []).join(', ')
+      );
+      const compactTitle = compactSearchValue(movie.title);
+      const compactGenre = compactSearchValue(movie.genre);
+      const compactCast = compactSearchValue(cast);
 
       return (
         title.includes(keyword) ||
         genre.includes(keyword) ||
-        cast.includes(keyword)
+        cast.includes(keyword) ||
+        compactTitle.includes(compactKeyword) ||
+        compactGenre.includes(compactKeyword) ||
+        compactCast.includes(compactKeyword)
       );
     });
   }, [isRecentView, movies, searchText]);

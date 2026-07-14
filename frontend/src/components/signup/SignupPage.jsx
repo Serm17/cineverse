@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { registerWithEmail } from '../../api.js';
+import { registerWithEmail, requestEmailVerification } from '../../api.js';
 import data from '/src/imgData.json';
 import '../login/login.css';
 import './signup.css';
@@ -10,12 +10,15 @@ const initialForm = {
   nickname: '',
   password: '',
   passwordConfirm: '',
+  verificationCode: '',
 };
 
 function SignupPage() {
   const [form, setForm] = useState(initialForm);
   const [status, setStatus] = useState('');
   const [busy, setBusy] = useState(false);
+  const [verificationBusy, setVerificationBusy] = useState(false);
+  const [verificationEmail, setVerificationEmail] = useState('');
 
   const promos = data.hero.promos.slice(0, 4);
 
@@ -28,6 +31,33 @@ function SignupPage() {
     }));
   };
 
+  const handleVerificationRequest = async () => {
+    const email = form.email.trim();
+
+    if (!email || !email.includes('@')) {
+      setStatus('인증번호를 받을 이메일을 확인해 주세요.');
+      return;
+    }
+
+    setVerificationBusy(true);
+    setStatus('');
+
+    try {
+      const result = await requestEmailVerification(email);
+      const expiresIn = Number(result?.expires_in_seconds);
+      setVerificationEmail(email);
+      setStatus(
+        Number.isFinite(expiresIn)
+          ? `인증번호를 전송했습니다. ${Math.ceil(expiresIn / 60)}분 안에 입력해 주세요.`
+          : '인증번호를 전송했습니다.'
+      );
+    } catch (error) {
+      setStatus(error.message);
+    } finally {
+      setVerificationBusy(false);
+    }
+  };
+
   const handleSubmit = async (event) => {
     event.preventDefault();
 
@@ -35,9 +65,20 @@ function SignupPage() {
     const nickname = form.nickname.trim();
     const password = form.password.trim();
     const passwordConfirm = form.passwordConfirm.trim();
+    const verificationCode = form.verificationCode.trim();
 
-    if (!email || !nickname || !password || !passwordConfirm) {
+    if (!email || !nickname || !password || !passwordConfirm || !verificationCode) {
       setStatus('모든 항목을 입력해 주세요.');
+      return;
+    }
+
+    if (email !== verificationEmail) {
+      setStatus('현재 이메일로 인증번호를 먼저 받아 주세요.');
+      return;
+    }
+
+    if (!/^\d{6}$/.test(verificationCode)) {
+      setStatus('이메일로 받은 숫자 6자리 인증번호를 입력해 주세요.');
       return;
     }
 
@@ -59,6 +100,7 @@ function SignupPage() {
         email,
         nickname,
         password,
+        verificationCode,
       });
 
       setStatus('회원가입 성공. 로그인 페이지로 이동합니다.');
@@ -101,14 +143,44 @@ function SignupPage() {
         <form className="login-form signup-form" onSubmit={handleSubmit}>
           <label className="login-field">
             <span>이메일</span>
+            <span className="signup-email-row">
+              <input
+                autoComplete="email"
+                disabled={busy || verificationBusy}
+                name="email"
+                onChange={updateField}
+                placeholder="user1@example.com"
+                type="email"
+                value={form.email}
+              />
+              <button
+                className="signup-verification-button"
+                disabled={busy || verificationBusy}
+                onClick={handleVerificationRequest}
+                type="button"
+              >
+                {verificationBusy
+                  ? '전송 중'
+                  : verificationEmail === form.email.trim()
+                    ? '재전송'
+                    : '인증번호'}
+              </button>
+            </span>
+          </label>
+
+          <label className="login-field">
+            <span>이메일 인증번호</span>
             <input
-              autoComplete="email"
+              autoComplete="one-time-code"
               disabled={busy}
-              name="email"
+              inputMode="numeric"
+              maxLength={6}
+              name="verificationCode"
               onChange={updateField}
-              placeholder="user1@example.com"
-              type="email"
-              value={form.email}
+              pattern="[0-9]{6}"
+              placeholder="숫자 6자리"
+              type="text"
+              value={form.verificationCode}
             />
           </label>
 

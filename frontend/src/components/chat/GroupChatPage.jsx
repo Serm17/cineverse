@@ -76,8 +76,7 @@ function toPosterUrl(value) {
   const path = String(value || '').trim();
   if (!path) return '';
   if (/^(https?:|data:|blob:)/i.test(path)) return path;
-  if (path.startsWith('/')) return `${POSTER_BASE_URL}${path}`;
-  return path;
+  return `${POSTER_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 function getMoviePoster(movie) {
@@ -443,18 +442,35 @@ function GroupChatPage() {
     const controller = new AbortController();
     abortRef.current = controller;
 
+    const handleStreamChunk = (partialAnswer, payload) => {
+      updateMessage(conversationId, pendingId, (message) => ({
+        ...message,
+        content: partialAnswer,
+        character:
+          normalizeName(payload?.character || payload?.data?.character) ||
+          message.character,
+        pending: false,
+      }));
+    };
+
     try {
       // 이어 대화는 방 기준, 새 대화는 멤버 수에 따라 1:1(/chat) vs 그룹(/chat/group).
-      const response = roomId
-        ? await sendRoomMessage(roomId, { message: content }, controller.signal)
-        : isGroup
-          ? await sendChat(
-              { mode: 'group', characters: memberNames, message: content },
-              controller.signal
+      const response = isGroup
+        ? await sendChat(
+            { mode: 'group', characters: memberNames, message: content },
+            controller.signal
+          )
+        : roomId
+          ? await sendRoomMessage(
+              roomId,
+              { message: content, character: memberNames[0] },
+              controller.signal,
+              handleStreamChunk
             )
           : await sendChat(
               { message: content, character: memberNames[0] },
-              controller.signal
+              controller.signal,
+              handleStreamChunk
             );
 
       if (response?.conversationId) {

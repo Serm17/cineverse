@@ -14,9 +14,7 @@ function resolvePosterPath(value) {
 
   if (!path) return '';
   if (/^(https?:|data:|blob:)/i.test(path)) return path;
-  if (path.startsWith('/')) return `${POSTER_BASE_URL}${path}`;
-
-  return path;
+  return `${POSTER_BASE_URL}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 // 영화 응답에서 출연진(배우) 이름 목록을 뽑아낸다. 백엔드마다 필드명이 달라질 수 있어

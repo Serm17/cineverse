@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 
-import { addLikedMovie, fetchCharacters, likeMovie, removeLikedMovie } from '../../api.js';
+import {
+  addLikedMovie,
+  fetchCharacters,
+  fetchLikedMovies,
+  likeMovie,
+  removeLikedMovie,
+} from '../../api.js';
 import GenreSection from './GenreSection.jsx';
 import HeroArea from './HeroArea.jsx';
 import MiddlePanels from './MiddlePanels.jsx';
@@ -60,6 +66,24 @@ function IndexPage({ authUser }) {
     return () => controller.abort();
   }, []);
 
+  useEffect(() => {
+    if (!authUser) {
+      setLikedMovies([]);
+      return undefined;
+    }
+
+    const controller = new AbortController();
+    fetchLikedMovies(controller.signal)
+      .then((movies) => {
+        setLikedMovies(movies.map((movie) => movie.title).filter(Boolean));
+      })
+      .catch((error) => {
+        if (error.name !== 'AbortError') setStatus(error.message);
+      });
+
+    return () => controller.abort();
+  }, [authUser]);
+
   // 다음 버튼 누르면 랜덤 캐릭터 다시 뽑기
   const handleNextCharacters = () => {
     pickRandomCharacters();
@@ -83,11 +107,10 @@ function IndexPage({ authUser }) {
     );
 
     try {
-      if (movie.id !== undefined && movie.id !== null) {
-        // 영화 id가 있으면 POST /movies/{id}/like (토글) 사용
-        await likeMovie(movie.id);
-      } else if (wasLiked) {
+      if (wasLiked) {
         await removeLikedMovie(movie);
+      } else if (movie.id !== undefined && movie.id !== null) {
+        await likeMovie(movie.id);
       } else {
         await addLikedMovie(movie);
       }
