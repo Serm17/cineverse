@@ -93,7 +93,13 @@ class MovieStats(Base):
     like_count = Column(Integer, default=0, server_default="0", nullable=False)
 
     # 랭킹 정렬에 사용할 점수
-    ranking_score = Column(Integer, default=0, server_default="0", nullable=False)
+    ranking_score = Column(
+        Integer,
+        default=0,
+        server_default="0",
+        nullable=False,
+        index=True,
+    )
     # 통계 row 생성 시간
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     # 통계 row 수정 시간

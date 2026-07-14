@@ -1,4 +1,7 @@
+from pathlib import Path
+
 from fastapi import FastAPI, Depends
+from fastapi.staticfiles import StaticFiles
 import httpx
 from sqlalchemy import text
 import uvicorn
@@ -12,6 +15,28 @@ from app.core.config import settings
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
+# 개인 정보 캐시 방지 목적
+@app.middleware("http")
+async def no_store_private_api_cache(request, call_next):
+    response = await call_next(request)
+
+    # 브라우저나 중간 캐시 서버 응답을 저장 못하게 설정
+    if request.url.path.startswith(("/auth", "/chat", "/user")):
+        response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+
+    return response
+
+# 프로필 이미지 url 반환
+PROFILE_IMAGE_DIR = Path(__file__).resolve().parent / "profile_images"
+app.mount(
+    "/profile_images",
+    StaticFiles(directory=PROFILE_IMAGE_DIR),
+    name="/profile_images"
+)
+
 
 # 프론트 서버
 app.add_middleware(
@@ -67,7 +92,7 @@ async def db_test(db: Session = Depends(get_db)):
         # PostgreSQL에 간단한 쿼리 실행
         db.execute(text("SELECT 1"))
         return {
-            "status" : "success",
+            "state" : "success",
             "message": "PostgreSQL 연결 성공"
         }
 
@@ -116,5 +141,5 @@ async def ai_health_check():
 if __name__ =="__main__":
     # 작성된 파일을 main.py로 저장했을 경우를 가정하고 서버를 실행합니다.
     # 포트를 8080으로 지정하여 localhost:8080에서 확인 가능하도록 설정합니다.
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8080, reload=True)
-    # uvicorn.run("app.main:app", host="0.0.0.0", port=8080, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8080, reload=True)
+    # uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)

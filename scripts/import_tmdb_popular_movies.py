@@ -23,6 +23,7 @@ from sqlalchemy.engine import URL, make_url
 
 DEFAULT_DATABASE_URL = "postgresql://postgres:1234@localhost:5432/CineVerse"
 TMDB_BASE_URL = "https://api.themoviedb.org/3"
+TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
 LOCAL_DB_HOSTS = {None, "", "localhost", "127.0.0.1", "::1"}
 DEFAULT_LIMIT = 40
 DEFAULT_LANGUAGE = "ko-KR"
@@ -169,6 +170,19 @@ def truncate(value: str | None, max_length: int) -> str | None:
     return value[:max_length]
 
 
+def tmdb_image_url(path: str | None) -> str | None:
+    if not path or not path.strip():
+        return None
+
+    image_path = path.strip()
+    if image_path.startswith(("http://", "https://")):
+        return image_path
+
+    if not image_path.startswith("/"):
+        image_path = f"/{image_path}"
+    return f"{TMDB_IMAGE_BASE_URL}{image_path}"
+
+
 def unique_names(items: list[str]) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
@@ -303,9 +317,14 @@ def build_movie_rows(
 ) -> list[dict[str, Any]]:
     synced_at = datetime.now(UTC)
     rows: list[dict[str, Any]] = []
+    seen_tmdb_ids: set[int] = set()
 
     for index, movie in enumerate(popular_movies, start=1):
         tmdb_id = int(movie["id"])
+        if tmdb_id in seen_tmdb_ids:
+            continue
+        seen_tmdb_ids.add(tmdb_id)
+
         director = None
         cast: list[str] = []
         keywords: list[str] = []
@@ -333,7 +352,7 @@ def build_movie_rows(
                 "vote_average": movie.get("vote_average"),
                 "vote_count": movie.get("vote_count"),
                 "audience_count": None,
-                "poster_path": truncate(movie.get("poster_path"), 300),
+                "poster_path": truncate(tmdb_image_url(movie.get("poster_path")), 300),
                 "last_synced_at": synced_at,
             }
         )

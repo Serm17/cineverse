@@ -1,16 +1,18 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, Header, Request, Response
+from urllib.parse import quote
+from fastapi import APIRouter, Depends, HTTPException, Header, Request, Response, status
 from jose import JWTError, jwt
 from sqlalchemy.orm import Session
-from app.core.current_user import get_current_user
-from app.schemas.users import RegisterRequest
-from app.schemas.users import LoginRequest
+from app.schemas.users import PasswordResetConfirmRequest, PasswordResetRequest, RegisterRequest, LoginRequest, EmailVerificationRequest
 from app.core.security import create_access_token, create_refresh_token, hash_password, hash_token, verify_password
 from app.core.config import settings
 from app.core.dependencies import get_db
 from app.models.users import User
 from app.models.tokens import RefreshToken
+from app.services.email.email_service import send_password_reset_email, send_signup_verification_code
+from app.services.email.email_verification_service import create_email_verification_code, expire_email_verification_code, validate_email_verification_code
+from app.services.password_reset_service import create_password_reset_token, reset_password_with_token, revoke_password_reset_token
 
 
 # 인증 관련 API들을 묶는 Router /auth/
@@ -18,6 +20,78 @@ router = APIRouter(
     prefix="/auth",
     tags=["Auth"]
 )
+
+# 이메일 인증번호 요청
+@router.post("/email-verification/request", status_code= status.HTTP_202_ACCEPTED,) # 요청은 접수했지만 실제 처리는 진행 중이거나 비동기로 처리
+async def request_email_verification(
+    request : EmailVerificationRequest,
+    db : Session = Depends(get_db),
+):
+    # DB에 동일한 형식으로 저장하기 위해 정규화
+    email = str(request.email).strip().lower()
+
+    # 가입된 이메일인지 확인
+    existing_user = (
+        db.query(User)
+        .filter(User.email == email)
+        .first()
+    )
+    
+    if existing_user:
+        raise HTTPException(
+            # 409 Conflict는 현재 서버 데이터 상태와 충돌해서 처리할 수 없다는 의미
+            status_code= status.HTTP_409_CONFLICT,
+            detail={
+                "state" : "failure",
+                "message" : "이미 가입된 이메일입니다."
+            },
+        )
+    
+    try:
+        # 인증번호 원문 생성 DB는 인증번호 해시값 저장
+        verification, plain_code = create_email_verification_code(db, email, "signup")
+    # 재전송 제한 시간 안에 다시 요청한 경우
+    except ValueError as exc:
+        raise HTTPException(
+            status_code= status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "state" : "failure",
+                "message" : str(exc),
+            },
+        )from exc
+    except Exception as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "state" : "error",
+                "message" : "인증번호 생성에 실패했습니다."
+            },
+        )from exc
+    try:
+        # 사용자 이메일로 인증번호 원문 전송
+        await send_signup_verification_code(email, plain_code)
+    # 이메일 발송 실패시 인증번호 만료 처리
+    except Exception as exc:
+        expire_email_verification_code(db, verification)
+
+        raise HTTPException(
+            status_code= status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "state" : "error",
+                "message" : "인증번호 이메일 발송에 실패했습니다."
+            },
+        )from exc
+        
+    return {
+        "state" : "success",
+        "message" : "인증번호를 이메일로 전송했습니다.",
+        "data" : {
+            "expires_in_seconds" : settings.EMAIL_VERIFICATION_EXPIRE_MINUTES * 60,
+        },
+    }
+
 
 # 회원가입 API POST /auth/register
 @router.post("/register")
@@ -28,9 +102,19 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
 
         if existing_user :
             return {
-                "status" : "failure",
+                "state" : "failure",
                 "message" : "회원가입 실패 - 이메일 중복"
             }
+        
+        if not request.password or request.password is None:
+            return {
+                "status" : "failure",
+                "message" : "비밀번호 입력해주세요"
+            }
+        
+        # 사용자가 이메일로 받은 인증번호 검사
+        nomalized_email = str(request.email).strip().lower()
+        validate_email_verification_code(db, nomalized_email, request.verification_code, "signup")
 
         #비밀번호 hash 
         hashed_pwd = hash_password(request.password)
@@ -38,11 +122,12 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
         new_user = User(
             email = request.email,
             password_hash = hashed_pwd,
-            nickname = request.nickname
+            nickname = request.nickname,
         )
         
         #DB 저장
         db.add(new_user)
+        
         #실제로 DB 저장
         db.commit()
         #저장 후 생성 id 조회
@@ -58,14 +143,113 @@ async def register(request: RegisterRequest, db: Session = Depends(get_db)):
                 "nickname" : new_user.nickname
             }
         }
+    except ValueError as e:
+        db.rollback()
+        return {
+            "state" : "error",
+            "message" : "인증 에러",
+            "error" : str(e),
+        }
     except Exception as e:
         # 저장 취소 롤백
         db.rollback()
         return {
-            "status":"error",
+            "state":"error",
             "message" : "회원가입 에러",
             "detail" : str(e)
         }
+
+
+# 비밀번호 재설정 이메일 요청
+@router.post("/password-reset/request", status_code=status.HTTP_202_ACCEPTED)
+async def request_password_reset(
+    request : PasswordResetRequest,
+    db : Session = Depends(get_db),
+):
+    # 이메일 정규화
+    email = str(request.email).strip().lower()
+
+    # 가입된 사용자 조회
+    user = (db.query(User).filter(User.email==email).first())
+
+    success_response = {
+        "state" : "success",
+        "message" : "가입된 이메일이면 비밀번호 재설정 링크가 전송됩니다.",
+    }
+
+    if user is None:
+        return success_response
+    
+    try:
+        reset_token, plain_token =create_password_reset_token(db, user)
+    except Exception as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail= {
+                "state" : "error",
+                "message" : "비밀번호 재설정 요청 처리에 에러가 발생했습니다.",
+            },
+        )from exc
+    # 프론트엔드 비밀번호 변경 페이지 주소 설정
+    reset_url = (
+        f"{settings.FRONTEND_BASE_URL.rstrip('/')}"
+        f"/reset-password?token={quote(plain_token, safe='')}"
+    )
+    try:
+        await send_password_reset_email(
+            email = user.email,
+            reset_url = reset_url
+        )
+    except Exception as exc:
+        revoke_password_reset_token(db, reset_token)
+
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={
+                "state" : "error",
+                "message" : "비밀번호 재설정 발송에 에러가 발생했습니다."
+            }
+        )from exc
+    return success_response
+
+@router.post("/password-reset/confirm")
+async def confirm_password_reset(
+    request : PasswordResetConfirmRequest,
+    db : Session = Depends(get_db),
+):
+    try:
+        reset_password_with_token(
+            db = db,
+            plain_token = request.token,
+            new_password= request.new_password,
+        )
+    except ValueError as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code= status.HTTP_400_BAD_REQUEST,
+            detail={
+                "state" : "failure",
+                "message" : str(exc),
+            },
+        )from exc
+    except Exception as exc:
+        db.rollback()
+
+        raise HTTPException(
+            status_code= status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={
+                "state" : "error",
+                "message" : "비밀번호 변경에 실패했습니다."
+            }
+        ) from exc
+    
+    return {
+        "state" : "success",
+        "message" : "비밀번호가 변경되었습니다."
+    }
+
 
 # 로그인 POST /auth/login
 @router.post("/login")

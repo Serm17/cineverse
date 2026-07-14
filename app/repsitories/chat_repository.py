@@ -60,8 +60,8 @@ def make_ai_history(messages) -> list[dict]:
         }
 
         # 캐릭터가 있는 경우
-        if message.character_name:
-            item["character"] = message.character_name
+        # if message.character_name:
+        #     item["character"] = message.character_name
         
         history.append(item)
     return history

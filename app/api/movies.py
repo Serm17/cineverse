@@ -1,14 +1,33 @@
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from app.ai_client.recommend import request_ai_recommend
 from app.core.current_user import get_current_user, get_optional_current_user
 from app.core.dependencies import get_db
 from app.schemas.movies import MovieDetailResponse, RecommendRequest
+from app.services.actors_service import get_actors_result
 from app.services.movies.movies_genre_service import genre_movies
 from app.services.movies.movies_ranking_service import movie_detail, realtime_movie_ranking_result
 from app.services.interaction_service import detail_movie_result, like_movie_result
 from app.services.movies.movies_search_service import search_movies_result
-from app.services.movies.movies_recommend_service import get_recommend_movies_result, get_recommend_today_movie_result
+from app.services.movies.movies_recommend_service import get_recommend_movies_result, get_recommend_today_movie_result, get_user_recommend_movies_result
+from app.services.user_service import user_like_actor
+
+TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
+
+
+def tmdb_image_url(path: str | None) -> str | None:
+    if not path or not path.strip():
+        return None
+
+    image_path = path.strip()
+    if image_path.startswith(("http://", "https://")):
+        return image_path
+
+    if not image_path.startswith("/"):
+        image_path = f"/{image_path}"
+    return f"{TMDB_IMAGE_BASE_URL}{image_path}"
+
 
 # 영화 관련 API들을 묶는 Router /movies/
 router = APIRouter(
@@ -16,15 +35,69 @@ router = APIRouter(
     tags=["Movies"]
 )
 
+# 배우 조회
+@router.get("/actors")
+def get_actors(
+    db:Session = Depends(get_db),
+):
+    try:
+        actors_result = get_actors_result(db)
+
+        if actors_result is None :
+            return {
+                "state" : "failure",
+                "message" : "DB에 저장된 배우가 없습니다.",
+            }
+        
+        return {
+            "state" : "success",
+            "message" : "배우 조회 성공",
+            "data" : [
+                {
+                    "actor_id" : actor.id,
+                    "actor_name" : actor.name,
+                    "profile_path": tmdb_image_url(actor.profile_path),
+                }for actor in actors_result
+            ]
+        }
+    except Exception as e:
+        return {
+            "state" : "error",
+            "message" : "배우 조회 API 에러",
+            "error" : str(e),
+        }
+
+# 배우 저장
+@router.post("/actor/{actor_id}")
+def like_actor(
+    actor_id : int,
+    current_user = Depends(get_current_user),
+    db : Session = Depends(get_db)
+):
+    try:
+        user_id = current_user["user_id"]
+
+        return user_like_actor(db, user_id, actor_id)
+    except Exception as e:
+        return {
+            "state" : "error",
+            "message" : "배우 저장 API 에러",
+            "error" : str(e)
+        }
+
 # AI 영화 추천 POST /movies/recommend
 @router.post("/recommend")
 def recommend_movies(
     # request: RecommendRequest,
     limit : int = Query(12, ge=1, le=30),
+    current_user :dict = Depends(get_optional_current_user),
     db : Session = Depends(get_db),
 ):
     try:
-        recommend_movies = get_recommend_movies_result(db, limit)
+        if current_user:
+            recommend_movies = get_user_recommend_movies_result(db = db, user_id = current_user["user_id"], limit=limit)
+        else :
+            recommend_movies = get_recommend_movies_result(db, limit)
 
         if not recommend_movies:
             return {
@@ -50,6 +123,7 @@ async def search_movies(
     keyword: str = Query(..., min_length=1),
     page : int = Query(1, ge=1),
     limit : int = Query(20, ge=1, le=50),
+    # current_user : dict = Depends(get_optional_current_user),
     db : Session = Depends(get_db),
 ):
     try :
@@ -149,15 +223,22 @@ def like_movie(
 
     
 @router.get("/today/recommend")
-async def get_today_recommend_movies():
+async def get_today_recommend_movies(
+    db: Session = Depends(get_db)
+):
     try:
-        result = await get_recommend_today_movie_result()
+        answer, movies = await get_recommend_today_movie_result(db)
 
-        if result is None:
+        if answer is None:
             return {
                 "state" : "failure",
                 "message" : "오늘의 영화 추천은 없습니다.",
             }
+        
+        result = {
+            "answer" : answer,
+            "movies" : movies,
+        }
         
         return {
             "state" : "success",
@@ -205,3 +286,17 @@ def get_genre_movies(
             "message" : "장르별 영화 에러",
             "error" : str(e),
         }
+
+# ai의 영화 추천
+@router.post("/ai-recommend")
+async def ai_recommend_movies(request : RecommendRequest):
+    ai_result = await request_ai_recommend(request.model_dump())
+
+    return {
+        "state" : "success",
+        "message" : "AI 영화 추천 성공",
+        "data" : {
+            "answer" : ai_result.get("answer"),
+            "movies" : ai_result.get("movies", []),
+        }
+    }

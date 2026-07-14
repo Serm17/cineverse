@@ -134,6 +134,8 @@ def get_movie_result(movie):
         "movie_id" : movie.id,
         "title" : movie.title,
         "genres": movie.genres,
+        "keyword" : movie.keywords,
+        "cast" : movie.cast,
         "poster_path": movie.poster_path,
         "vote_average" : movie.vote_average,
     }

@@ -18,7 +18,7 @@ from sqlalchemy import create_engine, select
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.orm import sessionmaker
 
-from app.models.character import Character
+from app.models.character import Character, CharacterAlias
 from app.models.interactions import UserMovieInteraction
 from app.models.movies import Movie
 from app.models.users import User
@@ -76,7 +76,7 @@ CINEVERSE_CHARACTERS: list[CharacterSeed] = [
     CharacterSeed("타노스", "어벤져스: 인피니티 워", credit_hints=("Thanos",), actor_hint="Josh Brolin", prompt_tone="거대하고 숙명론적인 어조로 말한다."),
     CharacterSeed("브루스 웨인", "다크 나이트", aliases=("배트맨",), credit_hints=("Bruce Wayne", "Batman"), actor_hint="Christian Bale", prompt_tone="절제되고 어두운 신념을 담아 말한다."),
     CharacterSeed("조커", "조커", credit_hints=("Arthur Fleck", "Joker"), actor_hint="Joaquin Phoenix", prompt_tone="불안정하고 냉소적인 농담을 섞어 말한다."),
-    CharacterSeed("할리 퀸", "수어사이드 스쿼드", credit_hints=("Harley Quinn",), actor_hint="Margot Robbie", prompt_tone="통통 튀고 위험한 에너지로 말한다."),
+    CharacterSeed("할리 퀸", "수어사이드 스쿼드", aliases=("할리퀸",), credit_hints=("Harley Quinn",), actor_hint="Margot Robbie", prompt_tone="통통 튀고 위험한 에너지로 말한다."),
     CharacterSeed("슈퍼맨", "맨 오브 스틸", aliases=("클라크 켄트", "클락 켄트"), credit_hints=("Clark Kent", "Superman", "Kal-El"), actor_hint="Henry Cavill", prompt_tone="따뜻하고 영웅적인 책임감으로 말한다."),
     CharacterSeed("원더우먼", "원더우먼", tmdb_id=297762, aliases=("다이애나",), credit_hints=("Diana Prince", "Wonder Woman"), actor_hint="Gal Gadot", prompt_tone="강인하고 품위 있게 말한다."),
     CharacterSeed("해리포터", "해리 포터와 마법사의 돌", credit_hints=("Harry Potter",), actor_hint="Daniel Radcliffe", prompt_tone="용감하지만 겸손한 마법사처럼 말한다."),
@@ -170,7 +170,16 @@ def ensure_local_database(url: URL, allow_non_local_db: bool) -> None:
 
 
 def image_url(path: str | None) -> str | None:
-    return f"{TMDB_IMAGE_BASE_URL}{path}" if path else None
+    if not path or not path.strip():
+        return None
+
+    image_path = path.strip()
+    if image_path.startswith(("http://", "https://")):
+        return image_path
+
+    if not image_path.startswith("/"):
+        image_path = f"/{image_path}"
+    return f"{TMDB_IMAGE_BASE_URL}{image_path}"
 
 
 def truncate(value: str | None, max_length: int) -> str | None:
@@ -317,7 +326,7 @@ def build_movie_row(
         "vote_average": details.get("vote_average") or movie.get("vote_average"),
         "vote_count": details.get("vote_count") or movie.get("vote_count"),
         "audience_count": None,
-        "poster_path": truncate(details.get("poster_path") or movie.get("poster_path"), 300),
+        "poster_path": truncate(image_url(details.get("poster_path") or movie.get("poster_path")), 300),
         "last_synced_at": datetime.now(UTC),
     }
 
@@ -355,6 +364,16 @@ def upsert_character(db, seed: CharacterSeed, movie: Movie | None, cast_member: 
     character.is_active = True
     db.flush()
     return character
+
+
+def upsert_character_aliases(db, character: Character, aliases: tuple[str, ...]) -> None:
+    for alias in dict.fromkeys(alias.strip() for alias in aliases if alias.strip()):
+        alias_row = db.scalar(select(CharacterAlias).where(CharacterAlias.alias == alias))
+        if alias_row is None:
+            db.add(CharacterAlias(character_id=character.id, alias=alias))
+            continue
+
+        alias_row.character_id = character.id
 
 
 def import_characters(args: argparse.Namespace) -> None:
@@ -403,7 +422,8 @@ def import_characters(args: argparse.Namespace) -> None:
                 movie_model = None
                 if movie_payload and details and credits:
                     movie_model = upsert_movie(db, build_movie_row(movie_payload, details, credits, genre_map, keywords))
-                upsert_character(db, seed, movie_model, cast_member)
+                character = upsert_character(db, seed, movie_model, cast_member)
+                upsert_character_aliases(db, character, seed.aliases)
             db.commit()
 
         print(f"[done] characters 테이블에 {len(rows)}명 저장/갱신 완료")

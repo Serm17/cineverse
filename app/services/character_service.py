@@ -22,6 +22,7 @@ def characters_all_active(db : Session):
         for character in result
     ]
 
+# 캐릭터 지금 가능 여부 확인 함수
 def get_active_character(db : Session, character_name : str) :
     # 캐릭터 이름 앞뒤 공백 제거
     character_name = character_name.strip()

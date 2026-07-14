@@ -3,14 +3,10 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import jwt
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
-
-# PostgreSQL 접속 정보
-# 형식:
-# postgresql://유저명:비밀번호@호스트:포트/DB명
-SQLALCHEMY_DATABASE_URL = "postgresql://postgres:1234@localhost:5432/CineVerse"
+from app.core.config import settings
 
 # PostgreSQL과 연결할 엔진 생성
-engine = create_engine(SQLALCHEMY_DATABASE_URL, echo=True)
+engine = create_engine(settings.DATABASE_URL, echo=True)
 
 # DB 세션 생성 객체
 # autocommit=False

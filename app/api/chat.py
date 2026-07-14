@@ -1,13 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.current_user import get_current_user
 from app.ai_client.chat import request_ai_chat
 from app.core.dependencies import get_db
+from app.models.character import Character
 from app.models.chat import ChatMessage, ChatRoom
 from app.schemas.chat import AutoChatRequest, SendChatMessageRequest, CharacterChatRequest, GroupChatRequest
-from app.services.character_service import characters_all_active
+from app.services.character_service import characters_all_active, get_active_character
 from app.services.chat_service import continue_chat, start_character_chat, start_general_chat, start_group_chat
+from app.services.chat_stream_service import continue_chat_stream, start_character_chat_stream
 
 
 # 채팅 관련 API들을 묶는 Router /chat
@@ -69,6 +72,49 @@ async def get_chat_character(
             "error" : str(e)
         }
 
+# 캐릭터 정보 가져오기 API
+@router.get("charcter/{character_name}")
+async def get_chat_character(
+    character_name : str,
+    db : Session = Depends(get_db),
+):
+    try:
+        character_name = get_active_character(db, character_name)
+        if character_name is None:
+            return {
+                "state" : "failure",
+                "message" : "관련 캐릭터 정보가 없습니다."
+            }
+        
+        character = db.scalar(
+            select(Character)
+            .where(
+                Character.name == character_name,
+                Character.is_active.is_(True)
+            )
+        )
+        
+        if character is None:
+            return {
+                "state" : "failure",
+                "message" : "DB에 캐릭터 관련 정보가 없습니다."
+            }
+        return {
+            "state" : "success",
+            "message" : "캐릭터 정보 조회 성공",
+            "data" : {
+                "id" : character.id,
+                "name" : character.name,
+                "profile_image" : character.profile_image,
+            }
+        }
+    except Exception as e:
+        return {
+            "state" : "error",
+            "message" : "캐릭터 정보 조회 에러",
+            "error" : str(e)
+        }
+
 # 캐릭터 채팅 API
 @router.post("")
 async def chat_character(
@@ -79,15 +125,9 @@ async def chat_character(
     try:
         # JWT 회원 정보에서 user_id를 가져온다.
         user_id = current_user["user_id"]
-        # user_id = 1
-        return {
-            "state" : "success",
-            "message" : "1대1 캐릭터 챗 실패",
-            "data" : {
-                "character" : request.character
-            }
-        }
-        return await start_character_chat(db, user_id, request)
+
+        return await start_character_chat_stream(db, user_id, request)
+        
     except HTTPException as e:
         db.rollback()
         return e.detail
@@ -98,6 +138,23 @@ async def chat_character(
             "message": "AI 캐릭터 채팅 처리 중 에러났습니다.",
             "error": str(e)
         }
+
+# # 1대1 대화 스트림 모드
+# @router.post("/stream")
+# async def chat_character_stream(
+#     request: CharacterChatRequest,
+#     current_user : dict = Depends(get_current_user),
+#     db : Session = Depends(get_db),
+# ):
+#     try:
+#         user_id = current_user["user_id"]
+
+#     except Exception as e:
+#         return {
+#             "state" : "error",
+#             "message" : "스트림 챗 API 에러",
+#             "error" : str(e)
+#         }
 
 # 그룹 채팅 API
 @router.post("/group")
@@ -152,7 +209,7 @@ async def get_chat_rooms(
 
     except Exception as e:
         return {
-            "status": "error",
+            "state": "error",
             "message": "채팅방 목록 조회 에러",
             "error": str(e)
         }
@@ -199,7 +256,7 @@ async def get_chat_messages(
 
     except Exception as e:
         return {
-            "status": "error",
+            "state": "error",
             "message": "채팅 메시지 목록 조회 에러",
             "error": str(e)
         }
@@ -217,13 +274,13 @@ async def send_chat_message(
         # 회원 JWT 조회
         user_id = current_user["user_id"]
         # user_id = 1
-
-        return await continue_chat(db, user_id, room_id, request)
+        return await continue_chat_stream(db, user_id, room_id, request)
+        
 
     except Exception as e:
         db.rollback()
         return {
-            "status": "error",
+            "state": "error",
             "message": "채팅 메시지 전송 에러",
             "error": str(e)
         }
@@ -262,7 +319,7 @@ async def delete_chat_room(
     except Exception as e:
         db.rollback()
         return {
-            "status": "error",
+            "state": "error",
             "message": "채팅방 삭제 에러",
             "error": str(e)
         }

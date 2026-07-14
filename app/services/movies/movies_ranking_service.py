@@ -30,7 +30,6 @@ def add_movie_ranking_score(db: Session, movie_id: int, score_delta: int, action
         movie_stats.search_click_count+=1
     movie_stats.ranking_score += score_delta
     db.add(movie_stats)
-    db.commit()
 
 
 # 누적 통계 테이블 기준으로 상위 인기 영화 조회 - 실시간 랭킹

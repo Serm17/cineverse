@@ -9,7 +9,7 @@ class User(Base):
     # 회원 고유 번호
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     # 이메일, 중복 불가
-    email = Column(String(255), unique=True, nullable=False)
+    email = Column(String(255), unique=True, index=True, nullable=False)
     # 비밀번호 해시값
     password_hash = Column(String(255), nullable=False)
     # 닉네임
@@ -26,6 +26,8 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     # 계정 정보 수정 시간
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    # 사용자 프로필
+    profile_image = Column(String(300), nullable=True)
 
     # 이 사용자가 남긴 영화 행동 기록 목록
     interactions = relationship(

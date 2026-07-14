@@ -41,7 +41,12 @@ class UserMovieInteraction(Base):
     score_delta = Column(Integer, nullable=False)
 
     # 행동 기록 시간
-    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    created_at = Column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+        index=True,
+    )
 
     # User 모델과 연결
     user = relationship("User", back_populates="interactions")

@@ -5,6 +5,8 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 
 from alembic import context
+from app.core.config import settings
+from app.models import Base
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -15,9 +17,7 @@ config = context.config
 # 지정하지 않은 로컬 환경에서는 현재 앱의 연결 설정을 재사용합니다.
 database_url = os.getenv("DATABASE_URL")
 if not database_url:
-    from app.core.dependencies import SQLALCHEMY_DATABASE_URL
-
-    database_url = SQLALCHEMY_DATABASE_URL
+    database_url = settings.DATABASE_URL
 
 # ConfigParser에서 '%'는 보간 문자이므로 URL에 포함된 경우 이스케이프합니다.
 config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
@@ -27,11 +27,8 @@ config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-target_metadata = None
+# app.models import 시 모든 ORM 모델이 Base.metadata에 등록됩니다.
+target_metadata = Base.metadata
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

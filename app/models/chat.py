@@ -10,7 +10,12 @@ class ChatRoom(Base):
     __tablename__ = "chat_rooms"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    user_id = Column(BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(
+        BigInteger,
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     room_type = Column(String(20), nullable=False)
     characters = Column(ARRAY(String), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
@@ -24,7 +29,12 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
-    room_id = Column(BigInteger, ForeignKey("chat_rooms.id", ondelete="CASCADE"), nullable=False)
+    room_id = Column(
+        BigInteger,
+        ForeignKey("chat_rooms.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     role = Column(String(20), nullable=False)
     character_name = Column(String(100), nullable=True)
     content = Column(Text, nullable=False)

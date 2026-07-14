@@ -1,10 +1,11 @@
-from fastapi import HTTPException
+import json
+
 from sqlalchemy.orm import Session
 
 from app.ai_client.chat import request_ai_chat, request_character_chat, request_group_chat
 from app.repsitories.chat_repository import create_group_room, create_message, create_room, get_room_messages, get_room_user, make_ai_history
 from app.schemas.chat import AutoChatRequest, CharacterChatRequest, GroupChatRequest, SendChatMessageRequest
-from app.services.character_service import get_active_character, get_active_characters
+from app.services.character_service import get_active_character
 
 
 # AI 대화 처리 함수
@@ -25,8 +26,10 @@ async def process_chat_message(db : Session, room, message:str, character : str 
                 "message" : "지원하지 않는 캐릭터입니다.",
             }
         
-        room.room_type = "character"
-        room.characters = [character]
+        # room.room_type = "character"
+        current_character = room.characters[0] if room.characters else None
+        if character != current_character:
+            room.characters = [character]
 
     # AI 요청에 넣을 history
     history = make_ai_history(previous_messages)
@@ -54,6 +57,12 @@ async def process_chat_message(db : Session, room, message:str, character : str 
             "data" : ai_result
         }
     
+    # ai가 자동으로 적용한 캐릭터인 경우
+    ai_auto_character = ai_result.get("character") or character
+
+    if room.room_type == "general" and ai_auto_character:
+        room.character = [ai_auto_character]
+    
     # 추천한 영화 리스트
     movies = ai_result.get("movies", [])
     
@@ -70,7 +79,7 @@ async def process_chat_message(db : Session, room, message:str, character : str 
         room_id=room.id,
         role="assistant",
         content=answer,
-        character_name=character,
+        character_name=ai_auto_character,
         recommended_movies=movies or None,
     )
 
@@ -82,6 +91,7 @@ async def process_chat_message(db : Session, room, message:str, character : str 
         "data" : {
             "room_id" : room.id,
             "answer" : answer,
+            "character" : ai_auto_character,
             "intent" : ai_result.get("intent"),
             "movies" : ai_result.get("movies", [])
         }
@@ -90,10 +100,10 @@ async def process_chat_message(db : Session, room, message:str, character : str 
 # 그룹 채팅 이어서 대화
 async def process_group_chat_message(db: Session, room, message: str):
     # 방의 기존 대화 기록 조회
-    priveous_messages = get_room_messages(db, room.id)
+    privious_messages = get_room_messages(db, room.id)
 
     # DB 메세지 목록을 history 형태로 변환
-    history = make_ai_history(priveous_messages)
+    history = make_ai_history(privious_messages)
 
     # 그룹 채팅 API 요청
     ai_result = await request_group_chat(
@@ -120,17 +130,19 @@ async def process_group_chat_message(db: Session, room, message: str):
         content=message,
     )
 
+    movies_saved = False
     # AI 캐릭터별 답변 저장
     for round in rounds:
         responses = round.get("responses", [])
         for response in responses:
+            recommend_movies = movies if movies and movies_saved else None
             create_message(
                 db=db,
                 room_id=room.id,
                 role = "assistant",
                 content= response.get("answer", ""),
                 character_name=response.get("character"),
-                recommended_movies=movies or None,
+                recommended_movies= recommend_movies or None,
             )
 
     # 사용자 메시지 + 캐릭터별 답변 저장
@@ -141,7 +153,10 @@ async def process_group_chat_message(db: Session, room, message: str):
         "message" : "그룹 채팅 응답에 성공했습니다.",
         "data" : {
             "room_id" : room.id,
-            "responses" : responses,
+            "intent" : intent,
+            "rounds" : rounds,
+            # "responses" : responses,
+            "movies" : movies,
         },
     }
 
@@ -156,11 +171,23 @@ async def start_general_chat(db: Session, user_id:int, request: AutoChatRequest)
             "state" : "failure",
             "message" : "내용을 입력해주세요."
         }
+    
+    if request.character is not None:
+        character = get_active_character(db, request.character)
 
+        if character is None:
+            return {
+                "state" : "failure",
+                "message" : "지원하지 않는 캐릭터입니다.",
+                "data" : {
+                    "character" : request.character
+                }
+            }
+    
     # 기본 AI 채팅방 생성
     room = create_room (db, user_id)
 
-    return await process_chat_message(db, room, message)
+    return await process_chat_message(db, room, message, request.character)
 
 # 캐릭터 채팅방에서 대화 시작
 async def start_character_chat(db: Session, user_id:int, request:CharacterChatRequest) :
@@ -176,7 +203,7 @@ async def start_character_chat(db: Session, user_id:int, request:CharacterChatRe
 
     character = get_active_character(db, request.character)
 
-    if not character or character is None:
+    if character is None:
         return {
             "state" : "failure",
             "message" : "지원하지 않는 캐릭터입니다.",
@@ -200,12 +227,20 @@ async def start_group_chat(db: Session, user_id: int, request: GroupChatRequest)
             "state": "failure",
             "message": "그룹 채팅은 2~5명의 캐릭터가 필요합니다.",
         }
-    
-    characters = get_active_characters(db, request.characters)
+    characters = []
+    for character in request.characters:
+        character = get_active_character(db, character)
+
+        if character is None:
+            return {
+                "state" : "failure",
+                "message" : "그룹 채팅 - 채팅할 수 없는 캐릭터가 있습니다."
+            }
+        characters.append(character)
 
     if characters is None:
         return {
-            "satet" : "failure",
+            "state" : "failure",
             "message" : "그룹 채팅 - 지원하지 않는 캐릭터가 포함되어 있습니다.",
         }
 
