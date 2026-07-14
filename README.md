@@ -1,127 +1,197 @@
 # CineVerse Backend
 
-CineVerse 영화 추천/검색/채팅 서비스를 위한 FastAPI 백엔드입니다.
+CineVerse의 영화 탐색, 개인화 추천, 캐릭터 채팅, 회원 인증을 담당하는 FastAPI 백엔드입니다. PostgreSQL에 영화·사용자·상호작용·채팅 데이터를 저장하고, 별도 AI 서버 및 TMDB 데이터와 연동합니다.
 
 ## 주요 기능
 
-- JWT 기반 회원가입, 로그인, 토큰 재발급, 로그아웃
-- 영화 검색, 상세 조회, 랭킹, 장르별 조회, 좋아요
-- AI 서버 연동 일반 채팅, 그룹 채팅, 채팅방/메시지 조회
-- 사용자 선호 정보, 좋아요 영화, 최근 조회 영화 조회
-- TMDB 기반 영화/캐릭터 데이터 적재 및 키워드 백필 스크립트
+- 이메일 인증 기반 회원가입과 JWT 로그인, 토큰 재발급 및 로그아웃
+- 이메일 링크를 이용한 비밀번호 재설정
+- 영화 검색, 상세 조회, 장르별 탐색, 실시간 랭킹 및 좋아요
+- 좋아요·조회·검색 이력을 반영한 사용자별 영화 추천
+- 오늘의 AI 영화 추천과 프롬프트 기반 AI 추천
+- 일반 AI 채팅, 캐릭터 1:1 SSE 스트리밍 채팅, 그룹 채팅
+- 사용자 선호도, 좋아요 영화, 최근 조회 영화, AI 추천 이력 관리
+- TMDB 영화·배우·캐릭터 데이터 적재 및 영화 키워드 보강
 
 ## 기술 스택
 
+| 구분 | 기술 |
+| --- | --- |
+| Language | Python 3.14+ |
+| API | FastAPI, Uvicorn, Pydantic |
+| Database | PostgreSQL, SQLAlchemy 2, Alembic, psycopg 3 |
+| Authentication | JWT, python-jose, passlib/bcrypt, HttpOnly Cookie |
+| External integration | httpx, TMDB API, SMTP |
+
+## 프로젝트 구조
+
+```text
+.
+├── app
+│   ├── ai_client/       # AI 서버 HTTP·SSE 연동
+│   ├── api/             # Auth, Movies, Chat, User 라우터
+│   ├── core/            # 환경설정, DB 세션, 인증·보안 공통 코드
+│   ├── models/          # SQLAlchemy ORM 모델
+│   ├── repsitories/     # 데이터 접근 계층
+│   ├── schemas/         # 요청·응답 Pydantic 스키마
+│   └── services/        # 도메인 서비스
+├── alembic/             # DB 마이그레이션
+├── docs/                # API 및 DB 명세
+├── scripts/             # 데이터 적재·보정 스크립트
+├── .env.example
+└── pyproject.toml
+```
+
+## 로컬 실행
+
+### 1. 사전 준비
+
 - Python 3.14 이상
-- FastAPI
-- SQLAlchemy
-- Alembic
 - PostgreSQL
-- Pydantic Settings
-- python-jose JWT
-- httpx
+- 연동할 AI 서버
+- 회원가입 및 비밀번호 재설정을 사용할 경우 SMTP 계정
 
-## 실행 준비
-
-가상환경을 만든 뒤 의존성을 설치합니다.
+### 2. 가상환경 및 패키지 설치
 
 ```bash
-python -m venv .venv
+python3.14 -m venv .venv
+.venv/bin/python -m pip install --upgrade pip
 .venv/bin/python -m pip install -e .
 ```
 
-환경변수 예시 파일을 복사해 로컬 `.env`를 만듭니다.
+### 3. 환경변수 설정
 
 ```bash
 cp .env.example .env
 ```
 
-`.env`에는 실제 비밀키와 API 키를 넣고, Git에는 올리지 않습니다.
+`.env`에 로컬 환경의 값을 입력합니다. 실제 비밀키와 API 키가 포함된 `.env`는 Git에 커밋하지 않습니다.
 
-## 환경변수
+| 변수 | 필수 | 기본값·예시 | 설명 |
+| --- | --- | --- | --- |
+| `DATABASE_URL` | 필수 | `postgresql://postgres:1234@localhost:5432/CineVerse` | 애플리케이션 및 Alembic DB 주소 |
+| `SECRET_KEY` | 필수 | 긴 무작위 문자열 | Access/Refresh Token 서명 키 |
+| `ALGORITHM` | 선택 | `HS256` | JWT 서명 알고리즘 |
+| `ACCESS_TOKEN_EXPIRE_MINUTES` | 선택 | `60` | Access Token 만료 시간(분) |
+| `REFRESH_TOKEN_EXPIRE_DAYS` | 선택 | `14` | Refresh Token 만료 시간(일) |
+| `AI_BASE_URL` | 선택 | `http://210.109.15.251` | AI 서버 기본 주소 |
+| `EMAIL_VERIFICATION_EXPIRE_MINUTES` | 선택 | `5` | 회원가입 인증번호 유효 시간(분) |
+| `EMAIL_VERIFICATION_RESEND_SECONDS` | 선택 | `60` | 인증번호 재전송 대기 시간(초) |
+| `EMAIL_VERIFICATION_MAX_ATTEMPTS` | 선택 | `5` | 인증번호 최대 검증 실패 횟수 |
+| `MAIL_HOST` | 필수 | `smtp.example.com` | SMTP 호스트 |
+| `MAIL_PORT` | 선택 | `587` | SMTP 포트 |
+| `MAIL_USERNAME` | 필수 | SMTP 계정 | SMTP 사용자명 |
+| `MAIL_PASSWORD` | 필수 | SMTP 앱 비밀번호 | SMTP 비밀번호 |
+| `MAIL_FROM` | 필수 | `no-reply@example.com` | 발신 이메일 주소 |
+| `FRONTEND_BASE_URL` | 필수 | `http://localhost:5173` | 비밀번호 재설정 화면의 프론트엔드 주소 |
+| `PASSWORD_RESET_EXPIRE_MINUTES` | 필수 | `30` | 비밀번호 재설정 링크 유효 시간(분) |
+| `TMDB_API_KEY` | 스크립트 실행 시 | TMDB API 키 | TMDB 데이터 적재·보정용 키 |
+| `TMDB_ACCESS_TOKEN` | 선택 | TMDB Read Access Token | `TMDB_API_KEY` 대신 사용할 수 있는 토큰 |
 
-| 이름 | 설명 | 예시 |
-| --- | --- | --- |
-| `SECRET_KEY` | JWT access/refresh token 서명 비밀키 | `change-me-to-a-long-random-secret` |
-| `ALGORITHM` | JWT 서명 알고리즘 | `HS256` |
-| `ACCESS_TOKEN_EXPIRE_MINUTES` | Access Token 만료 시간(분) | `60` |
-| `REFRESH_TOKEN_EXPIRE_DAYS` | Refresh Token 만료 시간(일) | `14` |
-| `BE2_BASE_URL` | BE2 서버 주소 | `http://127.0.0.1:8001` |
-| `AI_BASE_URL` | AI 서버 주소 | `http://210.109.15.251` |
-| `TMDB_API_KEY` | TMDB API 키 | `your-tmdb-api-key` |
-| `DATABASE_URL` | 키워드 백필 스크립트용 DB URL | `postgresql://postgres:1234@localhost:5432/CineVerse` |
+### 4. DB 마이그레이션
 
-현재 앱의 기본 DB 연결 문자열은 [app/core/dependencies.py](/Users/apple/mainproject_musubi/app/core/dependencies.py)에 정의되어 있습니다.
+`DATABASE_URL`이 가리키는 PostgreSQL 데이터베이스를 만든 뒤 최신 마이그레이션을 적용합니다.
 
-## 서버 실행
+```bash
+.venv/bin/alembic upgrade head
+```
+
+현재 마이그레이션 상태 확인:
+
+```bash
+.venv/bin/alembic current
+```
+
+### 5. 서버 실행
 
 ```bash
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080 --reload
 ```
 
-기본 주소는 `http://127.0.0.1:8080`입니다.
+- API 기본 주소: `http://127.0.0.1:8080`
+- Swagger UI: `http://127.0.0.1:8080/docs`
+- ReDoc: `http://127.0.0.1:8080/redoc`
 
-## 상태 확인 API
+## 인증 방식
 
-| Method | Path | 설명 |
-| --- | --- | --- |
-| `GET` | `/` | API 실행 확인 |
-| `GET` | `/health` | 서버 상태 확인 |
-| `GET` | `/db-test` | PostgreSQL 연결 확인 |
-| `GET` | `/ai-health` | AI 서버 `/health` 연결 확인 |
-
-## Auth API
-
-| Method | Path | 인증 | 설명 |
-| --- | --- | --- | --- |
-| `POST` | `/auth/register` | 없음 | 회원가입 |
-| `POST` | `/auth/login` | 없음 | 로그인, access token 반환 및 refresh token cookie 저장 |
-| `POST` | `/auth/refresh` | refresh cookie | access token 재발급 |
-| `POST` | `/auth/logout` | refresh cookie | refresh token 폐기 및 cookie 삭제 |
-
-로그인 후 회원 전용 API에는 아래 헤더를 보냅니다.
+로그인에 성공하면 응답 본문으로 Access Token을 받고, Refresh Token은 `/auth` 경로의 HttpOnly Cookie에 저장됩니다. 인증이 필요한 API에는 다음 헤더를 전송합니다.
 
 ```http
 Authorization: Bearer <access_token>
 ```
 
-## Movies API
+브라우저에서 `/auth/refresh`와 `/auth/logout`을 호출할 때는 Refresh Token Cookie가 전달되도록 credentials 옵션을 활성화해야 합니다.
+
+## API 요약
+
+### System
+
+| Method | Path | 설명 |
+| --- | --- | --- |
+| `GET` | `/` | API 실행 확인 |
+| `GET` | `/health` | 백엔드 상태 확인 |
+| `GET` | `/db-test` | PostgreSQL 연결 확인 |
+| `GET` | `/ai-health` | AI 서버 연결 확인 |
+
+### Auth
 
 | Method | Path | 인증 | 설명 |
 | --- | --- | --- | --- |
-| `POST` | `/movies/recommend?limit=12` | 없음 | 추천 영화 목록 |
+| `POST` | `/auth/email-verification/request` | 없음 | 회원가입 인증번호 이메일 발송 |
+| `POST` | `/auth/register` | 인증번호 | 회원가입 |
+| `POST` | `/auth/password-reset/request` | 없음 | 비밀번호 재설정 링크 발송 |
+| `POST` | `/auth/password-reset/confirm` | 재설정 토큰 | 새 비밀번호 저장 |
+| `POST` | `/auth/login` | 없음 | 로그인 및 토큰 발급 |
+| `POST` | `/auth/refresh` | Refresh Cookie | Access Token 재발급 |
+| `POST` | `/auth/logout` | Refresh Cookie | Refresh Token 폐기 및 Cookie 삭제 |
+
+### Movies
+
+| Method | Path | 인증 | 설명 |
+| --- | --- | --- | --- |
+| `GET` | `/movies/actors` | 없음 | 배우 목록 조회 |
+| `POST` | `/movies/actor/{actor_id}` | 필요 | 선호 배우 저장 |
+| `POST` | `/movies/recommend?limit=12` | 선택 | 비회원 기본 추천 또는 회원 맞춤 추천 |
 | `GET` | `/movies/search?keyword=...&page=1&limit=20` | 없음 | 영화 검색 |
-| `GET` | `/movies/ranking?limit=10` | 없음 | 실시간 랭킹 |
-| `GET` | `/movies/{movie_id}?source=direct` | 선택 | 영화 상세 조회, 로그인 사용자는 조회/검색 클릭 기록 저장 |
+| `GET` | `/movies/ranking?limit=10` | 없음 | 실시간 영화 랭킹 |
+| `GET` | `/movies/{movie_id}?source=direct` | 선택 | 영화 상세 조회 및 회원 행동 기록 |
 | `POST` | `/movies/{movie_id}/like` | 필요 | 영화 좋아요 |
-| `GET` | `/movies/today/recommend` | 없음 | AI 오늘의 영화 추천 |
+| `GET` | `/movies/today/recommend` | 없음 | 오늘의 AI 추천 영화 |
 | `GET` | `/movies/genre/{genre}?page=1&limit=20` | 없음 | 장르별 영화 조회 |
+| `POST` | `/movies/ai-recommend` | 없음 | 프롬프트·장르 기반 AI 영화 추천 |
 
-## User API
-
-| Method | Path | 인증 | 설명 |
-| --- | --- | --- | --- |
-| `GET` | `/user` | 필요 | 내 정보 조회 |
-| `GET` | `/user/preferences` | 필요 | 내 선호 정보 조회 |
-| `GET` | `/user/movies-like` | 필요 | 좋아요 누른 영화 조회 |
-| `GET` | `/user/recently-viewed?limit=5` | 필요 | 최근 상세 조회한 영화 조회 |
-
-## Chat API
+### Chat
 
 | Method | Path | 인증 | 설명 |
 | --- | --- | --- | --- |
 | `POST` | `/chat/auto` | 필요 | 일반 AI 채팅 시작 |
-| `GET` | `/chat/characters` | 없음 | 채팅 가능 캐릭터 조회 |
-| `POST` | `/chat` | 필요 | 1대1 캐릭터 채팅 |
-| `POST` | `/chat/group` | 필요 | 그룹 캐릭터 채팅 |
+| `GET` | `/chat/characters` | 없음 | 활성 캐릭터 목록 조회 |
+| `POST` | `/chat` | 필요 | 캐릭터 1:1 SSE 스트리밍 채팅 시작 |
+| `POST` | `/chat/group` | 필요 | 캐릭터 그룹 채팅 시작 |
 | `GET` | `/chat/rooms` | 필요 | 내 채팅방 목록 조회 |
 | `GET` | `/chat/rooms/{room_id}/messages` | 필요 | 채팅방 메시지 조회 |
-| `POST` | `/chat/rooms/{room_id}/messages` | 필요 | 기존 채팅방에서 이어서 대화 |
+| `POST` | `/chat/rooms/{room_id}/messages` | 필요 | 기존 채팅방에서 SSE 스트리밍 대화 계속 |
 | `DELETE` | `/chat/rooms/{room_id}` | 필요 | 내 채팅방 삭제 |
 
-현재 `POST /chat` 1대1 캐릭터 채팅은 실제 서비스 호출 전에 임시 응답을 반환하는 상태입니다.
+`POST /chat`과 `POST /chat/rooms/{room_id}/messages`의 응답 타입은 `text/event-stream`입니다.
 
-## 데이터 스크립트
+### User
+
+| Method | Path | 인증 | 설명 |
+| --- | --- | --- | --- |
+| `GET` | `/user` | 필요 | 내 정보 조회 |
+| `PATCH` | `/user/profile_image` | 필요 | 프로필 이미지 등록·변경 |
+| `DELETE` | `/user/delete/profile_image` | 필요 | 프로필 이미지 삭제 |
+| `GET` | `/user/preferences` | 필요 | 직접 설정·자동 학습 선호 정보 조회 |
+| `DELETE` | `/user/preference/delete` | 필요 | 선호 항목 삭제 |
+| `GET` | `/user/movies-like` | 필요 | 좋아요 영화 조회 |
+| `DELETE` | `/user/movie-like/{movie_id}` | 필요 | 영화 좋아요 삭제 |
+| `GET` | `/user/recently-viewed?limit=5` | 필요 | 최근 조회 영화 조회 |
+| `GET` | `/user/chatai-reommended-movies?limit=10` | 필요 | AI 채팅 추천 영화 이력 조회 |
+
+요청·응답 스키마와 상태 코드는 실행 중인 [Swagger UI](http://127.0.0.1:8080/docs)에서 확인할 수 있습니다. 협업용 상세 문서는 [`docs/backend-api-spec.md`](docs/backend-api-spec.md), [`docs/frontend-api-spec-notion.md`](docs/frontend-api-spec-notion.md), [`docs/db-schema-spec.md`](docs/db-schema-spec.md)를 참고하세요.
+
+## 데이터 관리 스크립트
 
 TMDB 인기 영화 적재:
 
@@ -135,27 +205,30 @@ CineVerse 캐릭터와 연결 영화 적재:
 .venv/bin/python scripts/import_cineverse_characters.py
 ```
 
-로컬 DB의 영화 키워드 백필:
+빈 영화 키워드 보강:
 
 ```bash
+.venv/bin/python scripts/backfill_movie_keywords.py --dry-run
 .venv/bin/python scripts/backfill_movie_keywords.py --merge-existing
 ```
 
-백필 스크립트는 기본적으로 localhost PostgreSQL만 수정하도록 방어 로직이 들어 있습니다. 먼저 확인하려면 `--dry-run`을 사용합니다.
+TMDB 기준 영화 제목 한글화:
 
-## 최근 작업 내역
+```bash
+.venv/bin/python scripts/update_movie_titles_ko.py
+```
 
-- `/user` 라우터를 정리하고 내 정보, 선호 정보, 좋아요 영화, 최근 조회 영화 조회 API를 연결했습니다.
-- 영화 검색/좋아요/최근 조회 응답에서 공통 영화 응답 형태를 사용하도록 `get_movie_result`와 `ShowMovie`, `ShowMovies` 스키마를 추가했습니다.
-- 채팅방 삭제 API를 활성화하고 JWT 사용자 기준으로 본인 채팅방만 삭제하도록 확인 로직을 넣었습니다.
-- 영화 상세 조회 시 로그인 사용자의 `view`, `search_click` 상호작용이 저장되도록 API 흐름을 정리했습니다.
-- TMDB 캐릭터 적재 스크립트에서 영화 키워드를 함께 가져오도록 확장했습니다.
-- 기존 영화 데이터의 빈 키워드를 로컬 메타데이터 기반으로 채우는 `scripts/backfill_movie_keywords.py`를 추가했습니다.
-- 오늘의 AI 추천 요청 프롬프트가 짧은 답변을 요구하도록 조정했습니다.
-- 개발 실행 호스트를 `127.0.0.1:8080` 기준으로 맞추고 CORS 허용 origin을 로컬 프론트 주소 중심으로 정리했습니다.
+각 스크립트의 옵션은 `--help`로 확인할 수 있습니다. 운영 DB에서 실행하기 전에 대상 `DATABASE_URL`과 dry-run 지원 여부를 반드시 확인하세요.
+
+## 문서
+
+- [백엔드 API 명세](docs/backend-api-spec.md)
+- [프론트엔드 연동 API 명세](docs/frontend-api-spec-notion.md)
+- [캐릭터 상세 API 명세](docs/frontend-character-detail-api-spec.md)
+- [DB 스키마 명세](docs/db-schema-spec.md)
 
 ## Git 저장 규칙
 
-- 실제 `.env`는 저장소에 올리지 않습니다.
-- 환경변수 공유는 `.env.example`을 사용합니다.
-- `.venv`, `outputs`, `external`, 캐시 파일은 Git에서 제외합니다.
+- `.env`, API 키, 토큰, SMTP 비밀번호 등 비밀정보는 커밋하지 않습니다.
+- 팀에서 공유할 환경변수 이름과 예시는 `.env.example`에만 기록합니다.
+- 가상환경, 캐시, 로컬 출력물과 업로드 파일은 저장소에 포함하지 않습니다.
