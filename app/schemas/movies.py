@@ -16,11 +16,14 @@ class PreferenceRequest(BaseModel):
 
 class MovieDetailData(BaseModel):
     model_config = ConfigDict(from_attributes=True)
-    
+
     id: int
     tmdb_id: int | None = None
     title: str
     overview: str | None = None
+    # 예고편이 없거나 TMDB 호출에 실패하면 None이 된다.
+    trailer_url: str | None = None
+
     genres: list[str] | None = None
     director: str | None = None
     cast: list[str] | None = None

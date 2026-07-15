@@ -68,6 +68,8 @@ cp .env.example .env
 | 변수 | 필수 | 기본값·예시 | 설명 |
 | --- | --- | --- | --- |
 | `DATABASE_URL` | 필수 | `postgresql://postgres:1234@localhost:5432/CineVerse` | 애플리케이션 및 Alembic DB 주소 |
+| `TMDB_ACCESS_TOKEN` | 선택 | TMDB API Read Access Token | TMDB 예고편 조회용 Bearer 인증 토큰 |
+| `TMDB_API_KEY` | 선택 | TMDB v3 API Key | Access Token이 없을 때 사용하는 TMDB 인증 키 |
 | `SECRET_KEY` | 필수 | 긴 무작위 문자열 | Access/Refresh Token 서명 키 |
 | `ALGORITHM` | 선택 | `HS256` | JWT 서명 알고리즘 |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | 선택 | `60` | Access Token 만료 시간(분) |

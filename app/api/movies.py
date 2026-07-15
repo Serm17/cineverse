@@ -4,13 +4,14 @@ from sqlalchemy.orm import Session
 from app.ai_client.recommend import request_ai_recommend
 from app.core.current_user import get_current_user, get_optional_current_user
 from app.core.dependencies import get_db
-from app.schemas.movies import MovieDetailResponse, RecommendRequest
+from app.schemas.movies import MovieDetailData, MovieDetailResponse, RecommendRequest
 from app.services.actors_service import get_actors_result
 from app.services.movies.movies_genre_service import genre_movies
 from app.services.movies.movies_ranking_service import movie_detail, realtime_movie_ranking_result
 from app.services.interaction_service import detail_movie_result, like_movie_result
 from app.services.movies.movies_search_service import search_movies_result
 from app.services.movies.movies_recommend_service import get_recommend_movies_result, get_recommend_today_movie_result, get_user_recommend_movies_result
+from app.services.movies.tmdb_trailer_service import get_movie_trailer_url
 from app.services.user_service import user_like_actor
 
 TMDB_IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500"
@@ -183,11 +184,28 @@ async def get_movie_detail(
                 action_type = "view"
 
             detail_movie_result(db, user_id, movie_id, action_type)
-            
+
+        # movies 테이블에는 이미 tmdb_id가 저장돼 있다.
+        # 해당 값으로 TMDB 예고편 API를 실시간 호출한다.
+        trailer_url = await get_movie_trailer_url(
+            movie_detail_result.tmdb_id
+        )
+
+        # SQLAlchemy Movie 객체를 MovieDetailData로 변환한다.
+        movie_data = MovieDetailData.model_validate(
+            movie_detail_result
+        )
+
+        # DB에는 없는 trailer_url을 응답 데이터에만 추가한다.
+        movie_data = movie_data.model_copy(
+            update={
+                "trailer_url": trailer_url,
+            }
+        )
         return {
             "state" : "success",
             "message" : "영화 조회 성공",
-            "data" : movie_detail_result,
+            "data" : movie_data,
         }
     except Exception as e:
         return {
