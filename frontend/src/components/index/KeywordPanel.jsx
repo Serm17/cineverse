@@ -1,12 +1,19 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { fetchUserPreferences } from '../../api.js';
 import Tag from './Tag.jsx';
 
-function KeywordPanel() {
+function KeywordPanel({ authUser }) {
   const [keywords, setKeywords] = useState([]);
+  const [isTruncated, setIsTruncated] = useState(false);
+  const keywordsRef = useRef(null);
 
   useEffect(() => {
+    if (!authUser) {
+      setKeywords([]);
+      return undefined;
+    }
+
     const controller = new AbortController();
 
     fetchUserPreferences(controller.signal)
@@ -25,7 +32,23 @@ function KeywordPanel() {
       });
 
     return () => controller.abort();
-  }, []);
+  }, [authUser]);
+
+  useEffect(() => {
+    const container = keywordsRef.current;
+    if (!container) return undefined;
+
+    const updateTruncation = () => {
+      setIsTruncated(container.scrollHeight > container.clientHeight + 1);
+    };
+
+    updateTruncation();
+
+    const resizeObserver = new ResizeObserver(updateTruncation);
+    resizeObserver.observe(container);
+
+    return () => resizeObserver.disconnect();
+  }, [keywords]);
 
   return (
     <article className="index-info-card keyword-card">
@@ -34,7 +57,10 @@ function KeywordPanel() {
         <a href="/recommendations">더보기 ›</a>
       </div>
 
-      <div className="index-keywords">
+      <div
+        className={`index-keywords${isTruncated ? ' index-keywords--truncated' : ''}`}
+        ref={keywordsRef}
+      >
         {keywords.map((keyword, index) => (
           <Tag key={`${keyword}-${index}`}>{keyword}</Tag>
         ))}

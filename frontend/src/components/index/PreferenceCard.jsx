@@ -23,13 +23,16 @@ function PreferenceCard({ authUser }) {
   }, [authUser]);
 
   useEffect(() => {
+    if (!authUser) {
+      setPreferences({ genres: [], actors: [], directors: [] });
+      return undefined;
+    }
+
     const controller = new AbortController();
 
     const fetchPreferenceData = async () => {
       try {
         const data = await fetchUserPreferences(controller.signal);
-
-        console.log('user preferences data:', data);
 
         const user = data.user || data.member || data;
 
@@ -61,7 +64,7 @@ function PreferenceCard({ authUser }) {
     fetchPreferenceData();
 
     return () => controller.abort();
-  }, []);
+  }, [authUser]);
 
   return (
     <>

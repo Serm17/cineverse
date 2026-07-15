@@ -63,8 +63,8 @@ function SignupPage() {
 
     const email = form.email.trim();
     const nickname = form.nickname.trim();
-    const password = form.password.trim();
-    const passwordConfirm = form.passwordConfirm.trim();
+    const password = form.password;
+    const passwordConfirm = form.passwordConfirm;
     const verificationCode = form.verificationCode.trim();
 
     if (!email || !nickname || !password || !passwordConfirm || !verificationCode) {
@@ -82,7 +82,7 @@ function SignupPage() {
       return;
     }
 
-    if (!email.includes('@') || password.length < 6) {
+    if (!email.includes('@')) {
       setStatus('이메일과 비밀번호를 다시 확인해 주세요.');
       return;
     }
@@ -204,7 +204,7 @@ function SignupPage() {
               disabled={busy}
               name="password"
               onChange={updateField}
-              placeholder="6자 이상"
+              placeholder="비밀번호"
               type="password"
               value={form.password}
             />

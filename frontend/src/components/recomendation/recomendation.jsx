@@ -4,6 +4,7 @@ import {
   addLikedMovie,
   fetchLikedMovies,
   fetchMovies,
+  fetchMoviesByGenre,
   fetchRecentMovies,
   removeLikedMovie,
 } from '../../api.js';
@@ -39,8 +40,9 @@ function Recommendation({ authUser }) {
   // 그 외(menu3 등)로 들어오면 기존처럼 영화 추천 목록을 보여준다.
   const isRecentView = queryParams.get('view') === 'recent';
 
-  // 장르별 추천의 "더보기 ›"(?keyword=장르명)로 들어오면 해당 장르로 자동 검색된 상태로 시작한다.
-  const initialKeyword = queryParams.get('keyword') || '';
+  // 장르별 추천의 "더보기 ›"(?genre=장르명)로 들어오면 장르 API 결과로 시작한다.
+  const initialGenre = queryParams.get('genre') || '';
+  const initialKeyword = queryParams.get('keyword') || initialGenre;
 
   const [movies, setMovies] = useState([]);
   const [likedMovies, setLikedMovies] = useState([]);
@@ -52,17 +54,24 @@ function Recommendation({ authUser }) {
     () => getItemsPerRow() * INITIAL_ROWS
   );
   const loadMoreRef = useRef(null);
+  const isInitialGenreSearch = Boolean(initialGenre) && searchText === initialGenre;
 
   useEffect(() => {
     const controller = new AbortController();
 
     const request = isRecentView
-      ? fetchRecentMovies(controller.signal).then((rawMovies) =>
+      ? fetchRecentMovies(controller.signal, 50).then((rawMovies) =>
           rawMovies.map(normalizeMovie)
         )
-      : fetchMovies(controller.signal, searchText).then((rawMovies) =>
-          rawMovies.map(normalizeMovie)
-        );
+      : isInitialGenreSearch
+        ? fetchMoviesByGenre(initialGenre, controller.signal, { limit: 50 }).then((rawMovies) =>
+            rawMovies.map(normalizeMovie)
+          )
+        : fetchMovies(controller.signal, searchText, {
+            limit: searchText.trim() ? 50 : 30,
+          }).then((rawMovies) =>
+            rawMovies.map(normalizeMovie)
+          );
 
     request
       .then(setMovies)
@@ -72,7 +81,7 @@ function Recommendation({ authUser }) {
       });
 
     return () => controller.abort();
-  }, [isRecentView, searchText]);
+  }, [initialGenre, isRecentView, searchText]);
 
   useEffect(() => {
     if (!authUser) {
@@ -261,7 +270,11 @@ function Recommendation({ authUser }) {
         ) : null}
       </div>
 
-      <MovieModal movie={selectedMovie} onClose={() => setSelectedMovie(null)} />
+      <MovieModal
+        movie={selectedMovie}
+        onClose={() => setSelectedMovie(null)}
+        source={!isRecentView && !isInitialGenreSearch && searchText.trim() ? 'search' : 'direct'}
+      />
     </main>
   );
 }

@@ -3,12 +3,12 @@ import KeywordPanel from './KeywordPanel.jsx';
 import RankPanel from './RankPanel.jsx';
 import RecentPanel from './RecentPanel.jsx';
 
-function MiddlePanels() {
+function MiddlePanels({ authUser }) {
   return (
     <section className="index-middle-grid" aria-label="관심 정보">
       <div className="index-stack">
-        <KeywordPanel />
-        <RecentPanel />
+        <KeywordPanel authUser={authUser} />
+        <RecentPanel authUser={authUser} />
       </div>
       <AiPanel />
       <RankPanel />

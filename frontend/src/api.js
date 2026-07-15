@@ -1,3 +1,5 @@
+// refresh cookie의 host/path가 실제 API 요청과 일치하도록 기본값은 백엔드에 직접 연결한다.
+// 다른 환경에서는 VITE_API_BASE_URL로 전체 API 주소를 지정한다.
 const BACKEND_BASE_URL = (
   import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080'
 ).replace(/\/+$/, '');
@@ -19,9 +21,14 @@ const CHAT_CACHE_KEYS = [
   'cineverse.chat.group.members', // (구) 그룹 멤버 목록
   RECOMMENDED_MOVIES_KEY, // 채팅에서 추천받은 영화 목록
 ];
+const ACCOUNT_CACHE_KEYS = [LOCAL_PROFILE_KEY, LOCAL_PREFERENCES_KEY];
 
 function clearChatCaches() {
   CHAT_CACHE_KEYS.forEach((key) => localStorage.removeItem(key));
+}
+
+function clearAccountCaches() {
+  ACCOUNT_CACHE_KEYS.forEach((key) => localStorage.removeItem(key));
 }
 
 // 채팅 응답의 추천 영화들을 최근순으로 누적 저장한다(중복 제거, 최대 개수 제한).
@@ -106,6 +113,8 @@ function getErrorMessage(data, fallbackMessage) {
 
   return (
     data?.detail?.message ||
+    data?.detail?.error ||
+    data?.detail?.detail ||
     validationMessage ||
     detailMessage ||
     data?.message ||
@@ -119,7 +128,7 @@ function getErrorMessage(data, fallbackMessage) {
 
 // 일부 에러 응답은 state 대신 status로 오므로 둘 다 확인한다.
 function getResponseState(data) {
-  return data?.detail?.state ?? data?.state ?? data?.status;
+  return data?.detail?.state ?? data?.detail?.status ?? data?.state ?? data?.status;
 }
 
 function isFailureResponse(data) {
@@ -253,6 +262,7 @@ export function clearStoredAuth() {
   localStorage.removeItem(AUTH_SESSION_KEY);
   // 로그아웃 시 브라우저에 남는 대화 로그/캐시도 함께 삭제한다.
   clearChatCaches();
+  clearAccountCaches();
 }
 
 function storeAuthSession({ accessToken, email, nickname, tokenType }) {
@@ -260,6 +270,7 @@ function storeAuthSession({ accessToken, email, nickname, tokenType }) {
   const previousUser = getStoredAuthUser();
   if (!previousUser || previousUser.email !== email) {
     clearChatCaches();
+    clearAccountCaches();
   }
 
   const user = {
@@ -388,21 +399,24 @@ export async function confirmPasswordReset(token, newPassword, signal) {
 }
 
 export async function logoutUser(signal) {
-  const response = await fetchWithAuth(`${BACKEND_BASE_URL}/auth/logout`, {
-    method: 'POST',
-    credentials: 'include',
-    signal,
-  });
+  try {
+    const response = await fetchWithAuth(`${BACKEND_BASE_URL}/auth/logout`, {
+      method: 'POST',
+      credentials: 'include',
+      signal,
+    });
 
-  const data = await response.json().catch(() => null);
+    const data = await response.json().catch(() => null);
 
-  if (!response.ok || getResponseState(data) !== 'success') {
-    throw new Error(getErrorMessage(data, `로그아웃 실패 (${response.status})`));
+    if (!response.ok || getResponseState(data) !== 'success') {
+      throw new Error(getErrorMessage(data, `로그아웃 실패 (${response.status})`));
+    }
+
+    return data;
+  } finally {
+    // 서버 로그아웃 성공 여부와 무관하게 프론트 access token과 사용자 캐시는 제거한다.
+    clearStoredAuth();
   }
-
-  clearStoredAuth();
-
-  return data;
 }
 
 export async function checkBackendHealth(signal) {

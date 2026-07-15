@@ -26,7 +26,7 @@ function GenreSection() {
         {genres.map((genre) => (
           <a
             className={`index-genre-card genre-tone--${genre.tone}`}
-            href={`/recommendations?keyword=${encodeURIComponent(genre.name)}`}
+            href={`/recommendations?genre=${encodeURIComponent(genre.name)}`}
             key={genre.name}
           >
             <span>더보기 ›</span>

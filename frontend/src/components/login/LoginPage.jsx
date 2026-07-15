@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { loginWithEmail } from '../../api.js';
+import { clearStoredAuth, loginWithEmail } from '../../api.js';
 
 import data from '/src/imgData.json';
 
@@ -33,20 +33,24 @@ function LoginPage({ onLogin }) {
     event.preventDefault();
 
     const email = form.email.trim();
-    const password = form.password.trim();
+    const password = form.password;
 
     if (!email || !password) {
       setStatus('이메일과 비밀번호를 입력해 주세요.');
       return;
     }
 
-    if (!email.includes('@') || password.length < 6) {
+    if (!email.includes('@')) {
       setStatus('입력한 정보를 다시 확인해 주세요.');
       return;
     }
 
     setBusy(true);
     setStatus('');
+
+    // 로그인 시도 전에 이전 세션을 비운다. 이렇게 해야 로그인이 실패하면
+    // 로그아웃 상태로 남고(옛 세션이 로그인된 것처럼 남지 않음), 성공해야만 로그인된다.
+    clearStoredAuth();
 
     try {
       const user = await loginWithEmail({

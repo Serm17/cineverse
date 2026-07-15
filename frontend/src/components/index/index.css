@@ -125,6 +125,35 @@
   object-fit: contain;
 }
 
+/* 이미지가 있을 때: 원본 비율(contain)로 생기는 빈 부분을, 같은 이미지를
+   확대·블러로 뒤에 깔아 바깥쪽 색이 자연스럽게 이어지도록 한다. */
+.index-character__avatar {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto;
+  display: block;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.index-character__avatar::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--char-img);
+  background-size: cover;
+  background-position: center;
+  filter: blur(12px);
+  transform: scale(1.5);
+}
+
+.index-character__avatar .index-character__sprite {
+  position: relative;
+  z-index: 1;
+  margin: 0;
+}
+
 .index-character span {
   display: block;
   margin-top: 6px;
@@ -380,9 +409,29 @@
 }
 
 .index-keywords {
+  max-height: 97px;
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  overflow: hidden;
+}
+
+.index-keywords--truncated::after {
+  content: '...';
+  min-width: 40px;
+  height: 27px;
+  padding-left: 10px;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background: linear-gradient(90deg, transparent, var(--panel) 28%);
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 700;
 }
 
 .index-recent-row {

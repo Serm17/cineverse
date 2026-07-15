@@ -16,7 +16,7 @@ function toEmbeddableUrl(url) {
   return url;
 }
 
-function MovieModal({ movie, onClose }) {
+function MovieModal({ movie, onClose, source = 'direct' }) {
   const [detail, setDetail] = useState(null);
 
   useEffect(() => {
@@ -35,12 +35,12 @@ function MovieModal({ movie, onClose }) {
     if (movieId === undefined || movieId === null) return undefined;
 
     const controller = new AbortController();
-    fetchMovieDetail(movieId, 'direct', controller.signal)
+    fetchMovieDetail(movieId, source, controller.signal)
       .then(setDetail)
       .catch(() => {});
 
     return () => controller.abort();
-  }, [movieId]);
+  }, [movieId, source]);
 
   if (!movie) return null;
 

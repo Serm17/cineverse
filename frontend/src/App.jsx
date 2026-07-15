@@ -94,6 +94,17 @@ function App() {
     pathname.startsWith('/components/mypage/MyPage') ||
     pathname.startsWith('/mypage');
 
+  const isRecentRecommendations =
+    isRecomendationPage &&
+    new URLSearchParams(window.location.search).get('view') === 'recent';
+
+  const isProtectedPage =
+    isAutoChatPage ||
+    isGroupChatPage ||
+    isChatPage ||
+    isMyPage ||
+    isRecentRecommendations;
+
   const handleLogin = (user) => {
     setAuthUser(user);
     window.location.href = '/';
@@ -125,7 +136,9 @@ function App() {
       navigation={pageData.navigation}
       onLogout={handleLogout}
     >
-      {isAutoChatPage ? (
+      {isProtectedPage && !authUser ? (
+        <LoginPage onLogin={handleLogin} />
+      ) : isAutoChatPage ? (
         <AutoChatPage />
       ) : isGroupChatPage ? (
         <GroupChatPage />

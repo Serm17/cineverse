@@ -174,11 +174,10 @@ function MyPage({ authUser, onUserUpdate }) {
         chatRecommendedResult,
       ] = results;
 
-      // 서버가 채팅 추천 영화를 주면 로컬 캐시 대신 그 값으로 갱신한다.
+      // 서버 응답이 빈 배열이어도 로컬의 오래된 추천 이력을 남기지 않는다.
       if (
         chatRecommendedResult.status === 'fulfilled' &&
-        Array.isArray(chatRecommendedResult.value) &&
-        chatRecommendedResult.value.length > 0
+        Array.isArray(chatRecommendedResult.value)
       ) {
         setChatRecommended(chatRecommendedResult.value);
       }
@@ -256,10 +255,10 @@ function MyPage({ authUser, onUserUpdate }) {
   ];
 
   const displayName = profile.nickname || authUser?.nickname || '게스트';
-  const recommendationMovies = [
-    ...chatRecommended.map((movie) => normalizeMovie(movie)),
-    ...movies,
-  ]
+  // "채팅 이력" 추천은 AI/캐릭터 채팅에서 실제로 추천받은 영화만 보여준다.
+  // 채팅 기록이 없으면 비워 둔다(일반 추천으로 폴백하지 않음).
+  const recommendationMovies = chatRecommended
+    .map((movie) => normalizeMovie(movie))
     .filter((movie) => movie.title)
     .filter((movie, index, list) => {
       const key = String(movie.id ?? movie.title);

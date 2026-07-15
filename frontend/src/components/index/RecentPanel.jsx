@@ -5,11 +5,16 @@ import MovieModal from '../movieCard/MovieModal.jsx';
 import PosterArt from './PosterArt.jsx';
 import { normalizeMovie } from './RecommendationRow.jsx';
 
-function RecentPanel() {
+function RecentPanel({ authUser }) {
   const [recentMovies, setRecentMovies] = useState([]);
   const [selectedMovie, setSelectedMovie] = useState(null);
 
   useEffect(() => {
+    if (!authUser) {
+      setRecentMovies([]);
+      return undefined;
+    }
+
     const controller = new AbortController();
 
     fetchRecentMovies(controller.signal)
@@ -20,7 +25,7 @@ function RecentPanel() {
       });
 
     return () => controller.abort();
-  }, []);
+  }, [authUser]);
 
   return (
     <article className="index-info-card recent-card">

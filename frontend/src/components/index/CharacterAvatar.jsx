@@ -36,11 +36,18 @@ function CharacterAvatar({ character, index }) {
       aria-label={`${character.name}와(과) 대화하기`}
     >
       {imageUrl ? (
-        <img
-          className={spriteClass}
-          src={imageUrl}
-          alt={`${character.name} 이미지`}
-        />
+        // 뒤에 같은 이미지를 확대·블러로 깔아, 원본 비율로 인해 생기는 빈 부분을
+        // 이미지 바깥쪽 색이 이어지도록 채운다.
+        <span
+          className="index-character__avatar"
+          style={{ '--char-img': `url("${imageUrl}")` }}
+        >
+          <img
+            className={spriteClass}
+            src={imageUrl}
+            alt={`${character.name} 이미지`}
+          />
+        </span>
       ) : (
         <div className={spriteClass} aria-label={`${character.name} 이미지`} />
       )}

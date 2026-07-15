@@ -144,7 +144,7 @@ function IndexPage({ authUser }) {
         </p>
       ) : null}
 
-      <MiddlePanels />
+      <MiddlePanels authUser={authUser} />
 
       <GenreSection />
     </main>
