@@ -36,6 +36,7 @@ CineVerse의 영화 탐색, 개인화 추천, 캐릭터 채팅, 회원 인증을
 │   └── services/        # 도메인 서비스
 ├── alembic/             # DB 마이그레이션
 ├── docs/                # API 및 DB 명세
+├── scripts/             # TMDB 영화·장르·배우 데이터 동기화
 ├── .env.example
 └── pyproject.toml
 ```
@@ -100,7 +101,36 @@ cp .env.example .env
 .venv/bin/alembic current
 ```
 
-### 5. 서버 실행
+### 5. TMDB 영화·배우 데이터 적재
+
+`scripts/import_tmdb_popular_movies.py`는 다음 데이터를 한 트랜잭션에서 함께 동기화합니다.
+
+- `movies`, `movie_genres`, `movie_stats`
+- 영화별 주요 출연진의 `actors`, `movie_actors`
+- 영화별 감독, 출연진 이름 배열, 키워드
+
+`characters`, `character_aliases` 데이터는 변경하지 않습니다. 먼저 소량 dry-run으로 TMDB 연결과 결과를 확인합니다.
+
+```bash
+.venv/bin/python scripts/import_tmdb_popular_movies.py \
+  --source catalog \
+  --limit 20 \
+  --cast-limit 10 \
+  --dry-run
+```
+
+서비스용 카탈로그를 12,000편까지 적재하는 예시는 다음과 같습니다. `catalog` 모드는 1980년부터 현재까지 한국어·영어 원작 영화를 연도별로 고르게 수집하며, 같은 영화와 배우는 TMDB ID 기준으로 갱신합니다.
+
+```bash
+.venv/bin/python scripts/import_tmdb_popular_movies.py \
+  --source catalog \
+  --limit 12000 \
+  --cast-limit 10
+```
+
+대량 적재 전에는 PostgreSQL 백업을 만들고, SSH 연결 종료에 대비해 `tmux` 같은 세션 관리 도구 안에서 실행하는 것을 권장합니다. 운영 DB에서는 기존 영화와 연관 데이터를 삭제하는 `--replace-existing-data`를 사용하지 않습니다. `--skip-extra-details`를 지정하면 배우 관계 동기화도 함께 생략됩니다.
+
+### 6. 서버 실행
 
 ```bash
 .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8080 --reload
@@ -201,4 +231,5 @@ Authorization: Bearer <access_token>
 - `.env`, API 키, 토큰, SMTP 비밀번호 등 비밀정보는 커밋하지 않습니다.
 - 팀에서 공유할 환경변수 이름과 예시는 `.env.example`에만 기록합니다.
 - 가상환경, 캐시, 로컬 출력물과 업로드 파일은 저장소에 포함하지 않습니다.
-- `external/`, `outputs/`, `scripts/`, `.venv/`, `.vscode/`, `app/profile_images/`는 로컬 전용 폴더로 Git 추적에서 제외합니다.
+- `external/`, `outputs/`, `.venv/`, `.vscode/`, `app/profile_images/`는 로컬 전용 폴더로 Git 추적에서 제외합니다.
+- 운영 적재에 사용하는 `scripts/import_tmdb_popular_movies.py`는 서버에서도 같은 절차를 재현할 수 있도록 Git으로 관리합니다.
