@@ -232,4 +232,4 @@ Authorization: Bearer <access_token>
 - 팀에서 공유할 환경변수 이름과 예시는 `.env.example`에만 기록합니다.
 - 가상환경, 캐시, 로컬 출력물과 업로드 파일은 저장소에 포함하지 않습니다.
 - `external/`, `outputs/`, `.venv/`, `.vscode/`, `app/profile_images/`는 로컬 전용 폴더로 Git 추적에서 제외합니다.
-- 운영 적재에 사용하는 `scripts/import_tmdb_popular_movies.py`는 서버에서도 같은 절차를 재현할 수 있도록 Git으로 관리합니다.
+- `scripts/`의 데이터 적재·보정 도구는 서버에서도 같은 절차를 재현할 수 있도록 Git으로 관리합니다.

@@ -16,8 +16,6 @@ __pycache__/
 
 outputs/
 external/
-scripts/*
-!scripts/import_tmdb_popular_movies.py
 app/profile_images/
 
 *.log
