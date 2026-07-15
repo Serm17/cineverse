@@ -30,7 +30,7 @@ const QUICK_TABS = [
 const MOOD_OPTIONS = [
   { emoji: '😊', label: '좋아요', prompt: '오늘 기분이 좋아! 신나는 영화 추천해줘' },
   { emoji: '😒', label: '시큰둥', prompt: '오늘 좀 시큰둥해... 그냥 볼만한 영화 없을까' },
-  { emoji: '😔', label: '힘들다', prompt: '힘들다... 위로가 되는 영화 볼래' },
+  { emoji: '😔', label: '힘들다', prompt: '힘들다... 위로가 되는 영화 추천해 줘' },
   { emoji: '🤔', label: '고민중', prompt: '뭘 볼지 고민되는데 추천해줘' },
   { emoji: '🤨', label: '의심반', prompt: '그냥 아무거나 재밌는 거 추천해줘' },
   { emoji: '😫', label: '지쳤어', prompt: '너무 지쳤어... 가볍게 볼 수 있는 영화 추천해줘' },
