@@ -11,7 +11,6 @@ CineVerse의 영화 탐색, 개인화 추천, 캐릭터 채팅, 회원 인증을
 - 오늘의 AI 영화 추천과 프롬프트 기반 AI 추천
 - 일반 AI 채팅, 캐릭터 1:1 SSE 스트리밍 채팅, 그룹 채팅
 - 사용자 선호도, 좋아요 영화, 최근 조회 영화, AI 추천 이력 관리
-- TMDB 영화·배우·캐릭터 데이터 적재 및 영화 키워드 보강
 
 ## 기술 스택
 
@@ -37,7 +36,6 @@ CineVerse의 영화 탐색, 개인화 추천, 캐릭터 채팅, 회원 인증을
 │   └── services/        # 도메인 서비스
 ├── alembic/             # DB 마이그레이션
 ├── docs/                # API 및 DB 명세
-├── scripts/             # 데이터 적재·보정 스크립트
 ├── .env.example
 └── pyproject.toml
 ```
@@ -85,8 +83,6 @@ cp .env.example .env
 | `MAIL_FROM` | 필수 | `no-reply@example.com` | 발신 이메일 주소 |
 | `FRONTEND_BASE_URL` | 필수 | `http://localhost:5173` | 비밀번호 재설정 화면의 프론트엔드 주소 |
 | `PASSWORD_RESET_EXPIRE_MINUTES` | 필수 | `30` | 비밀번호 재설정 링크 유효 시간(분) |
-| `TMDB_API_KEY` | 스크립트 실행 시 | TMDB API 키 | TMDB 데이터 적재·보정용 키 |
-| `TMDB_ACCESS_TOKEN` | 선택 | TMDB Read Access Token | `TMDB_API_KEY` 대신 사용할 수 있는 토큰 |
 
 ### 4. DB 마이그레이션
 
@@ -191,35 +187,6 @@ Authorization: Bearer <access_token>
 
 요청·응답 스키마와 상태 코드는 실행 중인 [Swagger UI](http://127.0.0.1:8080/docs)에서 확인할 수 있습니다. 협업용 상세 문서는 [`docs/backend-api-spec.md`](docs/backend-api-spec.md), [`docs/frontend-api-spec-notion.md`](docs/frontend-api-spec-notion.md), [`docs/db-schema-spec.md`](docs/db-schema-spec.md)를 참고하세요.
 
-## 데이터 관리 스크립트
-
-TMDB 인기 영화 적재:
-
-```bash
-.venv/bin/python scripts/import_tmdb_popular_movies.py
-```
-
-CineVerse 캐릭터와 연결 영화 적재:
-
-```bash
-.venv/bin/python scripts/import_cineverse_characters.py
-```
-
-빈 영화 키워드 보강:
-
-```bash
-.venv/bin/python scripts/backfill_movie_keywords.py --dry-run
-.venv/bin/python scripts/backfill_movie_keywords.py --merge-existing
-```
-
-TMDB 기준 영화 제목 한글화:
-
-```bash
-.venv/bin/python scripts/update_movie_titles_ko.py
-```
-
-각 스크립트의 옵션은 `--help`로 확인할 수 있습니다. 운영 DB에서 실행하기 전에 대상 `DATABASE_URL`과 dry-run 지원 여부를 반드시 확인하세요.
-
 ## 문서
 
 - [백엔드 API 명세](docs/backend-api-spec.md)
@@ -232,3 +199,4 @@ TMDB 기준 영화 제목 한글화:
 - `.env`, API 키, 토큰, SMTP 비밀번호 등 비밀정보는 커밋하지 않습니다.
 - 팀에서 공유할 환경변수 이름과 예시는 `.env.example`에만 기록합니다.
 - 가상환경, 캐시, 로컬 출력물과 업로드 파일은 저장소에 포함하지 않습니다.
+- `external/`, `outputs/`, `scripts/`, `.venv/`, `.vscode/`, `app/profile_images/`는 로컬 전용 폴더로 Git 추적에서 제외합니다.
