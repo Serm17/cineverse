@@ -1,4 +1,5 @@
 import json
+import re
 
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
@@ -8,6 +9,27 @@ from app.repsitories.chat_repository import create_message, create_room, get_roo
 from app.schemas.chat import CharacterChatRequest, SendChatMessageRequest
 from app.services.character_service import get_active_character
 
+# AI 서버가 답변 앞에 보내는 내부 제어 문자열을 찾는 정규식
+# 사용자에게 보여줄 실제 답변이 아니므로 스트림 시작 부분에서 제거
+AI_CONTROL_PREFIX = re.compile(
+    # <|channel>과 <|channel|> 형식을 모두 허용
+    # 그 뒤에는 thought, analysis, final
+    r"^[ \t]*<\|channel\|?>[ \t]*(?:thought|analysis|final)[ \t]*"
+    # 채널 표시 뒤의 실제 개행, 문자열 형태의 \n,
+    # 또는 <|message|> 제어 토큰까지 함께 제거
+    r"(?:(?:\\n)|\r?\n|<\|message\|>)+[ \t]*",
+    re.IGNORECASE,
+)
+
+# 아직 완성되지 않은 AI 제어 토큰인지 확인
+def is_control_prefix_candidate(text: str) -> bool:
+    value = text.lstrip()
+    return (
+        # "<", "<|", "<|channel"처럼 제어 토큰의 일부만 받은 경우
+        "<|channel".startswith(value)
+        # "<|channel>thought"처럼 제어 토큰으로 시작하는 경우
+        or value.startswith("<|channel")
+    )
 
 # stream 끝난 캐릭터 답변 저장
 async def stream_and_save_character_answer(
@@ -18,25 +40,59 @@ async def stream_and_save_character_answer(
         character : str,
 ):
     answer_parts = []
+    # 제어 토큰이 여러 조각으로 들어오는 경우를 위한 시작 버퍼
+    leading_buffer = ""
+    prefix_checked = False
+
     try:
         async for chunk in stream_character_chat(message, history, character):
-            yield chunk
+            # yield chunk
 
             if chunk.startswith("data: "):
                 data = chunk.removeprefix("data: ").strip()
 
                 if data == "[DONE]":
+                    yield "data: [DONE]\n\n"
                     continue
 
                 try:
                     parsed = json.loads(data)
-
+                    text = ""
                     if isinstance(parsed, str):
-                        answer_parts.append(parsed)
+                        # answer_parts.append(parsed)
+                        text = parsed
                     elif isinstance(parsed, dict) and "error" not in parsed:
-                        answer_parts.append(parsed.get("answer", ""))
+                        # answer_parts.append(parsed.get("answer", ""))
+                        text = parsed.get("answer", "")
                 except json.JSONDecodeError:
-                    answer_parts.append(data)
+                    # answer_parts.append(data)
+                    text = data
+
+                if not text:
+                    continue
+
+                # 첫 조각들만 합쳐 제어 토큰 검사
+                if not prefix_checked:
+                    leading_buffer += text
+                    match = AI_CONTROL_PREFIX.match(leading_buffer)
+
+                    if match:
+                        text = leading_buffer[match.end():]
+                        prefix_checked = True
+                    # 제어 토큰이 아직 완성되지 않았으므로 다음 조각 대기
+                    elif is_control_prefix_candidate(leading_buffer):
+                        continue
+                    else:
+                        text = leading_buffer
+                        prefix_checked = True
+
+                if not text:
+                    continue
+
+                answer_parts.append(text)
+                # 정제한 조각만 정상 SSE 형식으로 전달
+                yield f"data: {json.dumps(text, ensure_ascii=False)}\n\n"
+
     finally :
         # 스트림 정상 종료시 모아둔 답변 assistant 메시지로 저장
         answer = "".join(answer_parts).strip()

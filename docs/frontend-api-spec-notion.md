@@ -1,6 +1,6 @@
 # CineVerse 프론트엔드 API 연동 명세
 
-> 작성 기준: 2026-07-14  
+> 작성 기준: 2026-07-15
 > 기준 코드: `app/main.py`, `app/api/*`, `app/schemas/*`, `app/services/*`  
 > 현재 OpenAPI: URL path 38개 / HTTP operation 39개
 
@@ -910,7 +910,7 @@ GET /movies/search?keyword=인셉션&page=1&limit=20
 }
 ```
 
-좋아요 생성 시 영화 랭킹과 사용자 학습 취향 점수도 함께 갱신됩니다.
+좋아요 생성 시 영화 랭킹과 사용자 학습 취향 점수가 함께 갱신됩니다. 또한 현재 구현은 해당 영화의 장르·배우·키워드를 사용자 `preferred_*` 배열에도 추가합니다.
 
 ### 6.8 오늘의 AI 영화 추천
 
@@ -1122,7 +1122,7 @@ const response = await api.patch("/user/profile_image", formData);
 
 | 구분 | 의미 |
 | --- | --- |
-| `explicit_preferences` | 사용자가 직접 선택해 User에 저장된 취향 |
+| `explicit_preferences` | User의 `preferred_*` 배열에 저장된 취향. 현재는 직접 선택뿐 아니라 영화 좋아요로도 추가됨 |
 | `learned_preferences` | 조회, 검색 클릭, 좋아요 행동으로 누적된 취향 점수 |
 
 학습 점수는 소수점 셋째 자리까지 반올림됩니다. 감독/언어 등 내부 학습값은 현재 이 응답에서 제외됩니다.
@@ -1162,7 +1162,7 @@ const response = await api.patch("/user/profile_image", formData);
 }
 ```
 
-이 API는 `explicit_preferences`만 삭제하며 학습된 점수 목록을 삭제하지 않습니다.
+이 API는 User의 `preferred_*` 배열 값만 삭제하며 학습된 점수 목록은 삭제하지 않습니다.
 
 ### 7.6 좋아요 영화
 
@@ -1219,7 +1219,7 @@ const response = await api.patch("/user/profile_image", formData);
 }
 ```
 
-삭제 시 좋아요로 반영된 랭킹/취향 점수도 함께 차감됩니다.
+삭제 시 좋아요로 반영된 랭킹/학습 취향 점수가 함께 차감됩니다. 취소한 영화의 장르·배우·키워드가 다른 좋아요 영화에서도 사용되지 않으면 User의 `preferred_*` 배열에서도 제거됩니다. 현재 구현은 값의 최초 추가 경로를 구분하지 않으므로, 같은 값을 사용자가 직접 선택했더라도 다른 좋아요 영화가 사용하지 않으면 함께 제거될 수 있습니다.
 
 ### 7.8 최근 상세 조회 영화
 
@@ -1362,7 +1362,7 @@ async function requestChatStream(
 }
 ```
 
-백엔드는 AI 서버의 SSE line을 그대로 전달합니다. 현재 파서는 `data: "문자열"`, `data: {"answer":"..."}`, `data: [DONE]` 형태를 방어적으로 처리합니다.
+백엔드는 AI 서버에서 받은 `data: "문자열"`과 `data: {"answer":"..."}`를 파싱한 뒤, 프론트에는 답변 조각을 항상 JSON 문자열인 `data: "..."` 형식으로 정규화해 전달합니다. 답변 시작 부분의 `<|channel...>` 내부 제어 접두사는 제거하며, 종료 이벤트 `data: [DONE]`은 그대로 전달합니다. 따라서 프론트는 위 예시처럼 JSON 문자열을 우선 파싱하되, 이전 형식과의 호환을 위해 객체와 일반 문자열도 방어적으로 처리하는 것을 권장합니다.
 
 ### 8.2 일반 AI 채팅 시작
 
