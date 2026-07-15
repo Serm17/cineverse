@@ -12,6 +12,9 @@ export default defineConfig(({ mode }) => {
       // 기본은 명세의 허용 Origin과 동일한 127.0.0.1이며, 필요할 때만 환경변수로 변경한다.
       host: env.VITE_DEV_HOST || '127.0.0.1',
       port: 5173,
+      headers: {
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+      },
       proxy: {
         // VITE_API_BASE_URL=/be를 선택한 개발 환경에서만 같은 오리진 프록시로 사용한다.
         '/be': {
@@ -29,6 +32,11 @@ export default defineConfig(({ mode }) => {
     build: {
       outDir: 'dist',
       emptyOutDir: true,
+    },
+    preview: {
+      headers: {
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+      },
     },
   };
 });

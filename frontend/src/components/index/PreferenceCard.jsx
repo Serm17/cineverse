@@ -7,7 +7,7 @@ function PreferenceCard({ authUser }) {
   const [preferences, setPreferences] = useState({
     genres: [],
     actors: [],
-    directors: [],
+    keywords: [],
   });
 
   useEffect(() => {
@@ -24,7 +24,7 @@ function PreferenceCard({ authUser }) {
 
   useEffect(() => {
     if (!authUser) {
-      setPreferences({ genres: [], actors: [], directors: [] });
+      setPreferences({ genres: [], actors: [], keywords: [] });
       return undefined;
     }
 
@@ -52,7 +52,7 @@ function PreferenceCard({ authUser }) {
         setPreferences({
           genres: data.preferences?.genres || data.genres || [],
           actors: data.preferences?.actors || data.actors || [],
-          directors: data.preferences?.directors || data.directors || [],
+          keywords: data.preferences?.keywords || data.keywords || [],
         });
       } catch (error) {
         if (error.name === 'AbortError') return;
@@ -266,11 +266,11 @@ function PreferenceCard({ authUser }) {
           </div>
 
           <div className="taste-row">
-            <strong>선호 감독</strong>
+            <strong>관심 키워드</strong>
             <div className="taste-tags">
-              {preferences.directors.length > 0 ? (
-                preferences.directors.map((director) => (
-                  <span key={director}>{director}</span>
+              {preferences.keywords.length > 0 ? (
+                preferences.keywords.map((keyword) => (
+                  <span key={keyword}>{keyword}</span>
                 ))
               ) : (
                 <em className="taste-empty">분석 전</em>

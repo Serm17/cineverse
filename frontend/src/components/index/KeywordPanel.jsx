@@ -23,7 +23,7 @@ function KeywordPanel({ authUser }) {
         setKeywords([
           ...(preferences.genres || []),
           ...(preferences.actors || []),
-          ...(preferences.directors || []),
+          ...(preferences.keywords || []),
         ]);
       })
       .catch((error) => {

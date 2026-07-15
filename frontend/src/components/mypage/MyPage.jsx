@@ -126,7 +126,7 @@ function MyPage({ authUser, onUserUpdate }) {
   const [preferenceText, setPreferenceText] = useState({
     genres: '',
     actors: '',
-    directors: '',
+    keywords: '',
   });
   const [movies, setMovies] = useState([]);
   const [likedMovies, setLikedMovies] = useState([]);
@@ -198,7 +198,7 @@ function MyPage({ authUser, onUserUpdate }) {
         setPreferenceText({
           genres: toTagText(preferences.genres),
           actors: toTagText(preferences.actors),
-          directors: toTagText(preferences.directors),
+          keywords: toTagText(preferences.keywords),
         });
       }
 
@@ -241,17 +241,17 @@ function MyPage({ authUser, onUserUpdate }) {
     () => ({
       genres: parseTags(preferenceText.genres),
       actors: parseTags(preferenceText.actors),
-      directors: parseTags(preferenceText.directors),
+      keywords: parseTags(preferenceText.keywords),
     }),
     [preferenceText]
   );
 
-  // index/KeywordPanel.jsx와 동일하게 DB의 genres, actors, directors를 자르지 않고 그대로 표시한다.
-  // 각 태그에 어떤 분류(장르/배우/감독)에서 왔는지 함께 담아, X 버튼으로 개별 삭제할 때 사용한다.
+  // index/KeywordPanel.jsx와 동일하게 DB의 genres, actors, keywords를 자르지 않고 그대로 표시한다.
+  // 각 태그에 어떤 분류(장르/배우/키워드)에서 왔는지 함께 담아, X 버튼으로 개별 삭제할 때 사용한다.
   const keywordTags = [
     ...(preferences.genres || []).map((text) => ({ text, category: 'genres' })),
     ...(preferences.actors || []).map((text) => ({ text, category: 'actors' })),
-    ...(preferences.directors || []).map((text) => ({ text, category: 'directors' })),
+    ...(preferences.keywords || []).map((text) => ({ text, category: 'keywords' })),
   ];
 
   const displayName = profile.nickname || authUser?.nickname || '게스트';
@@ -442,13 +442,13 @@ function MyPage({ authUser, onUserUpdate }) {
     const nextPreferences = {
       genres: preferences.genres,
       actors: nextActors,
-      directors: preferences.directors,
+      keywords: preferences.keywords,
     };
 
     setPreferenceText({
       genres: nextPreferences.genres.join(', '),
       actors: nextActors.join(', '),
-      directors: nextPreferences.directors.join(', '),
+      keywords: nextPreferences.keywords.join(', '),
     });
 
     try {
@@ -477,18 +477,17 @@ function MyPage({ authUser, onUserUpdate }) {
     const nextPreferences = {
       genres: preferences.genres,
       actors: preferences.actors,
-      directors: preferences.directors,
+      keywords: preferences.keywords,
       [category]: (preferences[category] || []).filter((item) => item !== value),
     };
 
     setPreferenceText({
       genres: nextPreferences.genres.join(', '),
       actors: nextPreferences.actors.join(', '),
-      directors: nextPreferences.directors.join(', '),
+      keywords: nextPreferences.keywords.join(', '),
     });
 
     // 앱 카테고리(genres/actors/keywords) → 서버 preference_type(genre/actor/keyword) 매핑.
-    // directors 등 서버에 없는 타입은 로컬만 갱신한다.
     const typeMap = { genres: 'genre', actors: 'actor', keywords: 'keyword' };
     const preferenceType = typeMap[category];
 
@@ -630,11 +629,11 @@ function MyPage({ authUser, onUserUpdate }) {
                 }
               />
               <EditInput
-                label="감독"
-                value={preferenceText.directors}
+                label="키워드"
+                value={preferenceText.keywords}
                 disabled={false}
                 onChange={(event) =>
-                  setPreferenceText((current) => ({ ...current, directors: event.target.value }))
+                  setPreferenceText((current) => ({ ...current, keywords: event.target.value }))
                 }
               />
             </div>

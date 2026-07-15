@@ -105,6 +105,17 @@ function getArrayPayload(data, ...keys) {
   return [];
 }
 
+function mergePreferenceValues(...values) {
+  return Array.from(
+    new Set(
+      values
+        .flatMap((value) => (Array.isArray(value) ? value : []))
+        .map((value) => String(value || '').trim())
+        .filter(Boolean)
+    )
+  );
+}
+
 function getErrorMessage(data, fallbackMessage) {
   const validationMessage = Array.isArray(data?.detail)
     ? data.detail.map((item) => item?.msg).filter(Boolean).join(', ')
@@ -1152,8 +1163,19 @@ export async function fetchUserPreferences(signal) {
   return {
     ...serverData,
     preferences: {
-      ...serverPreferences,
-      ...(localPreferences || {}),
+      genres: mergePreferenceValues(
+        serverPreferences.genres,
+        localPreferences?.genres
+      ),
+      actors: mergePreferenceValues(
+        serverPreferences.actors,
+        localPreferences?.actors
+      ),
+      keywords: mergePreferenceValues(
+        serverPreferences.keywords,
+        localPreferences?.keywords,
+        localPreferences?.directors
+      ),
     },
   };
 }
