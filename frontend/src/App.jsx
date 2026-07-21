@@ -10,11 +10,13 @@ import LoginPage from './components/login/LoginPage.jsx';
 import PasswordResetPage from './components/login/PasswordResetPage.jsx';
 import SignupPage from './components/signup/SignupPage.jsx';
 import MyPage from './components/mypage/MyPage.jsx';
+import AdminApiPage from './components/admin/AdminApiPage.jsx';
 
 import {
   clearStoredAuth,
   getStoredAuthUser,
   logoutUser,
+  scheduleAutoLogout,
 } from '/src/api.js';
 
 import pageData from './components/index/indexPageData.json';
@@ -25,6 +27,11 @@ const MOBILE_BREAKPOINT = 768;
 
 function App() {
   const [authUser, setAuthUser] = useState(() => getStoredAuthUser());
+
+  // 이미 로그인된 상태로 접속하면 토큰 만료 시각에 맞춰 자동 로그아웃 타이머를 예약한다.
+  useEffect(() => {
+    scheduleAutoLogout();
+  }, []);
 
   useEffect(() => {
     const appShell = document.querySelector('.app-shell');
@@ -57,6 +64,7 @@ function App() {
   }, []);
 
   const pathname = window.location.pathname;
+  const isAdminPage = pathname.startsWith('/admin');
 
   // /chat/auto (CineBuddy 자동 대화), /chat/group (배우대기실) 은 /chat 보다 먼저 판별한다.
   const isAutoChatPage =
@@ -128,6 +136,10 @@ function App() {
   const handleUserUpdate = (user) => {
     setAuthUser(user);
   };
+
+  if (isAdminPage) {
+    return <AdminApiPage authUser={authUser} />;
+  }
 
   return (
     <DefaultLayout

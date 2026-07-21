@@ -4,7 +4,7 @@ import react from '@vitejs/plugin-react';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   // 백엔드 실제 주소(프록시 대상). .env의 VITE_BACKEND_TARGET로 덮어쓸 수 있다.
-  const backendTarget = env.VITE_BACKEND_TARGET || 'http://127.0.0.1:8080';
+  const backendTarget = env.VITE_BACKEND_TARGET || 'http://210.109.15.9';
 
   return {
     plugins: [react()],

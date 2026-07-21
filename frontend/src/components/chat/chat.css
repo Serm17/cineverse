@@ -524,10 +524,20 @@
 .chat-typing {
   align-self: flex-start;
   display: flex;
+  align-items: center;
   gap: 5px;
   padding: 15px 18px;
   border-radius: 4px 16px 16px 16px;
   background: rgba(44, 51, 57, 0.92);
+}
+
+/* "입력 중" 라벨: em 태그라 아래 .chat-typing span(점) 규칙에는 걸리지 않는다. */
+.chat-typing__label {
+  margin-right: 4px;
+  color: var(--muted);
+  font-size: 12.5px;
+  font-style: normal;
+  line-height: 1;
 }
 
 .chat-typing span {

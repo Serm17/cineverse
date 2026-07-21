@@ -1,7 +1,7 @@
 // refresh cookie의 host/path가 실제 API 요청과 일치하도록 기본값은 백엔드에 직접 연결한다.
 // 다른 환경에서는 VITE_API_BASE_URL로 전체 API 주소를 지정한다.
 const BACKEND_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:8080'
+  import.meta.env.VITE_API_BASE_URL || 'http://210.109.15.9'
 ).replace(/\/+$/, '');
 
 const LOCAL_PROFILE_KEY = 'cineverse.localProfile';
@@ -186,7 +186,8 @@ export async function fetchWithAuth(url, options = {}, allowRefreshRetry = true)
           'INVALID_AUTH_SCHEME',
         ].includes(errorCode)
       ) {
-        clearStoredAuth();
+        // 무효 토큰(재발급 대상 아님) → 자동 로그아웃.
+        handleSessionExpired();
       }
       return response;
     }
@@ -194,6 +195,7 @@ export async function fetchWithAuth(url, options = {}, allowRefreshRetry = true)
     try {
       await refreshAccessToken();
     } catch (refreshError) {
+      // 만료 토큰인데 재발급까지 실패 → 자동 로그아웃(handleSessionExpired가 이미 정리·이동).
       return response;
     }
 
@@ -212,14 +214,14 @@ async function performAccessTokenRefresh() {
   const data = await response.json().catch(() => null);
 
   if (!response.ok || getResponseState(data) !== 'success') {
-    clearStoredAuth();
+    handleSessionExpired();
     throw new Error(getErrorMessage(data, `토큰 재발급 실패 (${response.status})`));
   }
 
   const authData = data?.data || {};
 
   if (!authData.access_token) {
-    clearStoredAuth();
+    handleSessionExpired();
     throw new Error('토큰 재발급 응답에 access_token이 없습니다.');
   }
 
@@ -239,6 +241,8 @@ async function performAccessTokenRefresh() {
   };
 
   localStorage.setItem('auth_user', JSON.stringify(user));
+
+  scheduleAutoLogout();
 
   return user;
 }
@@ -260,7 +264,10 @@ export function getStoredAuthUser() {
 
     if (!rawUser) return null;
 
-    return JSON.parse(rawUser);
+    const user = JSON.parse(rawUser);
+    const tokenPayload = decodeJwtPayload(localStorage.getItem('access_token'));
+    const role = tokenPayload?.role || tokenPayload?.authority || tokenPayload?.user_role;
+    return role ? { ...user, role } : user;
   } catch (error) {
     console.error('저장된 로그인 정보 파싱 실패:', error);
     return null;
@@ -274,6 +281,84 @@ export function clearStoredAuth() {
   // 로그아웃 시 브라우저에 남는 대화 로그/캐시도 함께 삭제한다.
   clearChatCaches();
   clearAccountCaches();
+}
+
+// 이미 로그인/회원가입/비밀번호 관련 화면이면 리다이렉트하지 않는다(루프 방지).
+function redirectToLogin() {
+  if (typeof window === 'undefined') return;
+
+  const path = window.location.pathname || '';
+  const skip = ['/login', '/signup', '/reset-password', '/password-reset'];
+  if (skip.some((prefix) => path.startsWith(prefix))) return;
+
+  window.location.href = '/login';
+}
+
+// 토큰 만료(재발급 실패) 또는 무효 토큰 → 자동 로그아웃: 세션 정리 후 로그인 화면으로 이동.
+function handleSessionExpired() {
+  clearStoredAuth();
+  redirectToLogin();
+}
+
+// JWT payload에서 만료 시각(exp, 초)을 읽는다.
+function decodeJwtPayload(token) {
+  try {
+    const part = String(token || '').split('.')[1];
+    if (!part) return null;
+
+    let base64 = part.replace(/-/g, '+').replace(/_/g, '/');
+    const padding = base64.length % 4;
+    if (padding) base64 += '='.repeat(4 - padding);
+
+    return JSON.parse(atob(base64));
+  } catch (error) {
+    return null;
+  }
+}
+
+function decodeJwtExp(token) {
+  const payload = decodeJwtPayload(token);
+  return typeof payload?.exp === 'number' ? payload.exp : null;
+}
+
+let autoLogoutTimer = null;
+
+// 액세스 토큰 만료 시각에 맞춰, 만료 직전 재발급을 시도하고 실패하면 즉시 자동 로그아웃한다.
+// (아무 동작을 하지 않아도 만료 시점에 로그아웃되도록 하는 프로액티브 처리)
+export function scheduleAutoLogout() {
+  if (typeof window === 'undefined') return;
+
+  if (autoLogoutTimer) {
+    clearTimeout(autoLogoutTimer);
+    autoLogoutTimer = null;
+  }
+
+  const token = localStorage.getItem('access_token');
+  if (!token) return;
+
+  const exp = decodeJwtExp(token);
+  if (!exp) return;
+
+  const run = async () => {
+    try {
+      // 만료 직전 재발급 성공 → 새 토큰 기준으로 다시 예약(세션 유지).
+      await refreshAccessToken();
+      scheduleAutoLogout();
+    } catch (error) {
+      // 재발급 실패(HTTP 실패/네트워크 오류 등 무엇이든) → 자동 로그아웃.
+      handleSessionExpired();
+    }
+  };
+
+  // 만료 5초 전에 재발급을 시도한다(네트워크 지연 여유). 이미 지났으면 즉시 실행.
+  const delay = exp * 1000 - Date.now() - 5000;
+  if (delay <= 0) {
+    run();
+    return;
+  }
+
+  // setTimeout 최대 지연(약 24.8일)을 넘지 않도록 클램프.
+  autoLogoutTimer = setTimeout(run, Math.min(delay, 2_000_000_000));
 }
 
 function storeAuthSession({ accessToken, email, nickname, tokenType }) {
@@ -293,6 +378,8 @@ function storeAuthSession({ accessToken, email, nickname, tokenType }) {
   localStorage.setItem('access_token', accessToken);
   localStorage.setItem('auth_user', JSON.stringify(user));
   localStorage.setItem(AUTH_SESSION_KEY, crypto.randomUUID());
+
+  scheduleAutoLogout();
 
   return user;
 }
@@ -1357,3 +1444,33 @@ export async function fetchAiRecommendation(signal) {
     movies: movieList,
   };
 }
+
+// 관리자 API(BE2 명세). 기존 인증 토큰/refresh 처리를 그대로 재사용한다.
+async function requestAdminApi(path, { method = 'GET', body, signal } = {}) {
+  const response = await fetchWithAuth(`${BACKEND_BASE_URL}${path}`, {
+    method,
+    signal,
+    headers: body ? { 'Content-Type': 'application/json' } : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok || isFailureResponse(data)) {
+    if (response.status === 401) throw new Error('로그인이 필요하거나 인증이 만료되었습니다.');
+    if (response.status === 403) throw new Error('관리자 권한이 필요합니다.');
+    throw new Error(getErrorMessage(data, `관리자 API 요청 실패 (${response.status})`));
+  }
+  return data;
+}
+
+export const createAdminMovie = (payload, signal) =>
+  requestAdminApi('/admin/movies', { method: 'POST', body: payload, signal });
+export const updateAdminMovie = (id, payload, signal) =>
+  requestAdminApi(`/admin/movies/${encodeURIComponent(id)}`, { method: 'PUT', body: payload, signal });
+export const deleteAdminMovie = (id, signal) =>
+  requestAdminApi(`/admin/movies/${encodeURIComponent(id)}`, { method: 'DELETE', signal });
+export const createAdminCharacter = (payload, signal) =>
+  requestAdminApi('/admin/characters', { method: 'POST', body: payload, signal });
+export const updateAdminCharacter = (id, payload, signal) =>
+  requestAdminApi(`/admin/characters/${encodeURIComponent(id)}`, { method: 'PUT', body: payload, signal });
+export const fetchAdminStats = (signal) => requestAdminApi('/admin/stats', { signal });

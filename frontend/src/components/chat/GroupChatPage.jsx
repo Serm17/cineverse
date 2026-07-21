@@ -46,6 +46,24 @@ const formatTime = (value) =>
     new Date(value)
   );
 
+// 그룹채팅 순차 타이핑용 유틸 ---------------------------------------------
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+// 글자당 타이핑 지연(ms). 문장부호에는 추가 지연을 준다.
+function getTypingDelay(character) {
+  if ([',', '，'].includes(character)) return 100;
+  if (['.', '!', '?', '。', '！', '？'].includes(character)) return 200;
+  if (character === '…') return 250;
+  return 40;
+}
+
+// crypto.randomUUID가 없는 환경을 위한 안전한 고유 id 생성기
+const createId = () =>
+  typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : `msg-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+// -----------------------------------------------------------------------
+
 function readJson(key, fallback) {
   try {
     const raw = window.localStorage.getItem(key);
@@ -162,6 +180,10 @@ function GroupChatPage() {
   const [activeTab, setActiveTab] = useState('');
   const [activePicker, setActivePicker] = useState(null);
 
+  // 그룹 응답을 하나씩 타이핑 재생하는 동안 "입력 중"인 캐릭터와 재생 진행 여부
+  const [typingCharacter, setTypingCharacter] = useState(null);
+  const [isPlayingGroupMessages, setIsPlayingGroupMessages] = useState(false);
+
   const messagesRef = useRef(null);
   const textareaRef = useRef(null);
   const quickPickerRef = useRef(null);
@@ -169,6 +191,8 @@ function GroupChatPage() {
   const abortRef = useRef(null);
   const stickToBottomRef = useRef(true);
   const loadedRoomIdsRef = useRef(new Set());
+  // 순차 재생 취소용 토큰: 값이 바뀌면 실행 중인 재생 루프가 스스로 멈춘다.
+  const playbackIdRef = useRef(0);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -324,7 +348,15 @@ function GroupChatPage() {
     const el = messagesRef.current;
     if (!el || !stickToBottomRef.current) return;
     el.scrollTop = el.scrollHeight;
-  }, [messages, activeId]);
+  }, [messages, activeId, typingCharacter]);
+
+  // 컴포넌트 언마운트 시 실행 중인 타이핑 재생을 중단(타이머 정리).
+  useEffect(
+    () => () => {
+      playbackIdRef.current += 1;
+    },
+    []
+  );
 
   useEffect(() => {
     resizeTextarea(textareaRef.current);
@@ -407,9 +439,110 @@ function GroupChatPage() {
     }));
   };
 
+  // 텍스트를 한 글자씩 onUpdate로 흘려보낸다. isCancelled()가 true면 즉시 중단.
+  const typeText = async ({ text, onUpdate, isCancelled }) => {
+    let currentText = '';
+
+    for (const character of text) {
+      if (isCancelled()) return;
+
+      currentText += character;
+      onUpdate(currentText);
+
+      await sleep(getTypingDelay(character));
+    }
+  };
+
+  // 실행 중인 순차 재생을 중단한다(토큰 증가 → 루프가 다음 검사에서 멈춤).
+  // 이미 출력된 텍스트는 그대로 남긴다.
+  const cancelGroupPlayback = () => {
+    playbackIdRef.current += 1;
+    setTypingCharacter(null);
+    setIsPlayingGroupMessages(false);
+  };
+
+  // 그룹 응답(여러 캐릭터 메시지)을 배열 순서대로 하나씩 "입력 중 → 타이핑"으로 재생한다.
+  const playGroupMessages = async (conversationId, replyMessages) => {
+    // 이 재생만의 토큰. 다른 재생이 시작되거나 취소되면 값이 달라져 루프가 멈춘다.
+    const myPlaybackId = ++playbackIdRef.current;
+    const isCancelled = () => myPlaybackId !== playbackIdRef.current;
+
+    setIsPlayingGroupMessages(true);
+
+    for (const reply of replyMessages) {
+      if (isCancelled()) break;
+
+      // 1~2. 현재 캐릭터를 "입력 중" 상태로 표시
+      setTypingCharacter({ name: reply.character, image: findImage(reply.character) });
+
+      // 3. 캐릭터가 말하기 전 잠깐 대기(delay_ms)
+      await sleep(reply.delayMs ?? 600);
+      if (isCancelled()) break;
+
+      // 4. 빈 말풍선을 추가하고, "입력 중" 표시는 말풍선으로 대체(중복 표시 방지)
+      const messageId = reply.id || createId();
+      setTypingCharacter(null);
+      updateConversation(conversationId, (conversation) => {
+        // 동일 메시지 중복 추가 방지
+        if (conversation.messages.some((m) => m.id === messageId)) return conversation;
+
+        return {
+          ...conversation,
+          messages: [
+            ...conversation.messages,
+            {
+              id: messageId,
+              role: 'assistant',
+              character: reply.character,
+              content: '',
+              intent: reply.intent,
+              emotion: reply.emotion,
+              movies: [],
+              createdAt: reply.createdAt || new Date().toISOString(),
+            },
+          ],
+        };
+      });
+
+      // 5. 텍스트를 한 글자씩 채워 넣는다(함수형 업데이트로 최신 상태 기준).
+      await typeText({
+        text: reply.content,
+        isCancelled,
+        onUpdate: (partial) => {
+          updateMessage(conversationId, messageId, (message) => ({
+            ...message,
+            content: partial,
+          }));
+        },
+      });
+      if (isCancelled()) break;
+
+      // 타이핑이 끝난 메시지에만 추천 영화(있으면)를 붙인다.
+      if (reply.movies?.length) {
+        updateMessage(conversationId, messageId, (message) => ({
+          ...message,
+          movies: reply.movies,
+        }));
+      }
+
+      // 7. 다음 캐릭터가 입력을 시작하기 전 짧은 대기
+      await sleep(300);
+    }
+
+    // 정상 종료일 때만 상태 정리(취소된 경우엔 다음 재생/취소자가 관리).
+    if (!isCancelled()) {
+      setTypingCharacter(null);
+      setIsPlayingGroupMessages(false);
+    }
+  };
+
   const sendMessage = async () => {
     const content = input.trim();
     if (!content || busy || !activeConversation) return;
+
+    // 이전 그룹 응답이 아직 타이핑 재생 중이면 즉시 중단(출력된 텍스트는 유지)하고
+    // 새 사용자 메시지를 이어서 처리한다.
+    cancelGroupPlayback();
 
     const conversationId = activeConversation.id;
     const roomId = activeConversation.roomId;
@@ -505,6 +638,9 @@ function GroupChatPage() {
             content: reply?.answer || reply?.content || reply?.message || '',
             createdAt,
             intent: roundLabel,
+            emotion: reply?.emotion,
+            // 캐릭터가 말하기 전 대기 시간(백엔드가 안 주면 기본값)
+            delayMs: reply?.delay_ms ?? reply?.delayMs ?? 600,
             movies: [],
           });
         });
@@ -518,10 +654,31 @@ function GroupChatPage() {
           content: response?.answer || '응답 내용이 없습니다.',
           intent: response?.intent,
           createdAt,
+          delayMs: 500,
           movies: response?.movies || [],
         });
       } else if (response?.movies?.length) {
         replyMessages[replyMessages.length - 1].movies = response.movies;
+      }
+
+      // 그룹 응답은 여러 캐릭터가 순차적으로 "입력 중 → 한 글자씩" 말하도록 재생한다.
+      // (1:1 대화는 기존 방식 그대로 한 번에 반영한다.)
+      if (isGroup) {
+        // pending(로딩) 말풍선을 제거한 뒤 순차 재생을 시작한다.
+        updateConversation(conversationId, (conversation) => ({
+          ...conversation,
+          messages: conversation.messages.filter((m) => m.id !== pendingId),
+        }));
+
+        // 추천받은 영화를 마이페이지 추천과 잇기 위해 저장한다.
+        addRecommendedMovies(response?.movies || []);
+
+        // busy를 먼저 풀어, 재생 중에도 사용자가 새 메시지를 보낼 수 있게 한다.
+        setBusy(false);
+        abortRef.current = null;
+
+        await playGroupMessages(conversationId, replyMessages);
+        return;
       }
 
       updateConversation(conversationId, (conversation) => ({
@@ -554,6 +711,7 @@ function GroupChatPage() {
   const clearMessages = () => {
     if (!activeConversation) return;
     abortRef.current?.abort();
+    cancelGroupPlayback();
     updateConversation(activeConversation.id, (conversation) => ({
       ...conversation,
       roomId: '',
@@ -823,6 +981,36 @@ function GroupChatPage() {
                     </article>
                   );
                 })}
+
+                {typingCharacter ? (
+                  <article className="chat-msg chat-msg--assistant chat-msg--typing">
+                    <span
+                      className="chat-msg__avatar"
+                      style={
+                        typingCharacter.image
+                          ? undefined
+                          : { background: orbGradient(typingCharacter.name || activeName) }
+                      }
+                    >
+                      {typingCharacter.image ? (
+                        <img src={typingCharacter.image} alt="" />
+                      ) : null}
+                    </span>
+
+                    <div className="chat-msg__col">
+                      <div className="chat-msg__meta">
+                        <strong>{typingCharacter.name || 'AI'}</strong>
+                      </div>
+
+                      <div className="chat-typing">
+                        <em className="chat-typing__label">입력 중</em>
+                        <span />
+                        <span />
+                        <span />
+                      </div>
+                    </div>
+                  </article>
+                ) : null}
               </>
             )}
           </section>
