@@ -9,7 +9,7 @@ from app.ai_client.recommend import request_recommend_today_movie
 from app.models.daily_ai_recommendation import DailyAiRecommendation, DailyAiRecommendationMovie
 from app.models.interactions import UserMovieInteraction
 from app.models.movies import Movie, MovieStats
-from app.services.movies.movies_overview_shorten import shorten_text
+from app.services.movies.overview_utils import shorten_text
 from app.services.preference_service import get_user_preference_scores
 
 # 추천 흐름

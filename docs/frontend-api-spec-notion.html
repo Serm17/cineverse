@@ -64,9 +64,9 @@ li { margin: 4px 0; }
 <body>
 <div class="copy-note"><b>Notion 복붙 방법:</b> 이 HTML 파일을 브라우저로 열고, 화면에 렌더링된 본문을 드래그해서 복사한 뒤 Notion에 붙여넣으세요. .md 파일 원문을 복사하지 마세요.</div>
 <h1>CineVerse 프론트엔드 API 연동 명세</h1>
-<p>&gt; 작성 기준: 2026-07-14</p>
+<p>&gt; 작성 기준: 2026-07-24</p>
 <p>&gt; 기준 코드: <code>app/main.py</code>, <code>app/api/*</code>, <code>app/schemas/*</code>, <code>app/services/*</code></p>
-<p>&gt; 현재 OpenAPI: URL path 38개 / HTTP operation 39개</p>
+<p>&gt; 현재 OpenAPI: URL path 44개 / HTTP operation 46개</p>
 <p>이 문서는 프론트엔드가 현재 백엔드에 바로 연동할 수 있도록 실제 요청 형식, 응답 필드, 인증 방식, 예외 사항을 한곳에 정리한 문서입니다.</p>
 <h2>빠른 찾기</h2>
 <ul>
@@ -78,8 +78,9 @@ li { margin: 4px 0; }
 <li>[6. Movies](#6-movies)</li>
 <li>[7. User](#7-user)</li>
 <li>[8. Chat](#8-chat)</li>
-<li>[9. System](#9-system)</li>
-<li>[10. 프론트 체크리스트](#10-프론트-체크리스트)</li>
+<li>[9. Admin](#9-admin)</li>
+<li>[10. System](#10-system)</li>
+<li>[11. 프론트 체크리스트](#11-프론트-체크리스트)</li>
 </ul>
 <hr>
 <h2>1. 연동 전 필독</h2>
@@ -108,6 +109,9 @@ li { margin: 4px 0; }
 <tr><td>기존 대화 이어가기</td><td>성공 시 항상 SSE이며 캐릭터가 필요함</td><td><code>content-type</code>을 먼저 확인</td></tr>
 <tr><td>캐릭터 상세 경로</td><td>실제 경로가 <code>/chatcharcter/{character_name}</code></td><td>오타 경로 그대로 호출</td></tr>
 <tr><td>채팅 추천 목록 경로</td><td>실제 경로가 <code>/user/chatai-reommended-movies</code></td><td>오타 경로 그대로 호출</td></tr>
+<tr><td>관리자 권한 변경 실패</td><td>대상 없음/중복 권한/본인 권한 회수도 현재 HTTP 200 + <code>state: &quot;error&quot;</code> 반환</td><td><code>response.ok</code>가 아니라 <code>state</code> 확인</td></tr>
+<tr><td>관리자 영화 ID</td><td>수정·삭제의 <code>{movie_id}</code>는 TMDB ID가 아니라 내부 <code>movies.id</code></td><td>관리자 영화 검색 결과의 <code>movie_id</code> 사용</td></tr>
+<tr><td>TMDB 배우 수정</td><td>TMDB 등록 영화에 <code>cast</code>를 보내면 <code>state: &quot;failure&quot;</code></td><td>해당 영화의 배우 변경 UI 비활성화</td></tr>
 <tr><td>영화 이미지</td><td><code>poster_path</code>/<code>poster_url</code>이 상대 경로 또는 전체 URL일 수 있음</td><td>이미지 URL 정규화 함수 사용</td></tr>
 <tr><td>Refresh cookie</td><td>cookie path가 <code>/auth</code>, <code>SameSite=Lax</code>, 개발 환경 <code>Secure=false</code></td><td>프론트/API의 host 표기를 통일</td></tr>
 </tbody></table>
@@ -347,7 +351,17 @@ export function resolveMovieImage(path?: string | null) {
 <tr><td>POST</td><td><code>/chat/rooms/{room_id}/messages</code></td><td>Access</td><td>SSE/JSON</td><td>기존 캐릭터 대화 이어가기</td></tr>
 <tr><td>DELETE</td><td><code>/chat/rooms/{room_id}</code></td><td>Access</td><td>JSON</td><td>채팅방 삭제</td></tr>
 </tbody></table>
-<h3>4.5 System</h3>
+<h3>4.5 Admin</h3>
+<table><thead><tr><th>Method</th><th>Path</th><th>인증</th><th>용도</th></tr></thead><tbody>
+<tr><td>GET</td><td><code>/admin/check</code></td><td>Admin</td><td>현재 사용자의 관리자 권한 확인</td></tr>
+<tr><td>GET</td><td><code>/admin/tmdb-movies-search</code></td><td>Admin</td><td>TMDB 영화 검색 및 내부 등록 여부 확인</td></tr>
+<tr><td>POST</td><td><code>/admin/tmdb-movies-register/{tmdb_id}</code></td><td>Admin</td><td>TMDB 상세정보로 영화·장르·배우 등록</td></tr>
+<tr><td>POST</td><td><code>/admin/movie</code></td><td>Admin</td><td>TMDB에 없는 영화 직접 등록</td></tr>
+<tr><td>PATCH</td><td><code>/admin/movie/{movie_id}</code></td><td>Admin</td><td>내부 영화 ID 기준 부분 수정</td></tr>
+<tr><td>DELETE</td><td><code>/admin/movie/{movie_id}</code></td><td>Admin</td><td>내부 영화 ID 기준 삭제</td></tr>
+<tr><td>PATCH</td><td><code>/admin/users/admin-role</code></td><td>Admin</td><td>이메일로 사용자 관리자 권한 부여/회수</td></tr>
+</tbody></table>
+<h3>4.6 System</h3>
 <table><thead><tr><th>Method</th><th>Path</th><th>인증</th><th>설명</th></tr></thead><tbody>
 <tr><td>GET</td><td><code>/</code></td><td>공개</td><td>API 실행 확인</td></tr>
 <tr><td>GET</td><td><code>/health</code></td><td>공개</td><td>백엔드 상태</td></tr>
@@ -699,7 +713,7 @@ localStorage.removeItem(&quot;access_token&quot;);</code></pre>
   &quot;user_id&quot;: 1,
   &quot;movie_id&quot;: 10
 }</code></pre>
-<p>좋아요 생성 시 영화 랭킹과 사용자 학습 취향 점수도 함께 갱신됩니다.</p>
+<p>좋아요 생성 시 영화 랭킹과 사용자 학습 취향 점수가 함께 갱신됩니다. 또한 현재 구현은 해당 영화의 장르·배우·키워드를 사용자 <code>preferred_*</code> 배열에도 추가합니다.</p>
 <h3>6.8 오늘의 AI 영화 추천</h3>
 <h3># <code>GET /movies/today/recommend</code></h3>
 <p>인증: 공개</p>
@@ -784,7 +798,7 @@ localStorage.removeItem(&quot;access_token&quot;);</code></pre>
   &quot;data&quot;: {
     &quot;email&quot;: &quot;user@example.com&quot;,
     &quot;nickname&quot;: &quot;무비러버&quot;,
-    &quot;profile_image&quot;: &quot;http://127.0.0.1:8080/profile_images/profile_x.jpg&quot;
+    &quot;profile_image&quot;: &quot;http://127.0.0.1:8080/uploads/images/user_profiles/profile_x.jpg&quot;
   }
 }</code></pre>
 <p><code>profile_image</code>는 <code>string | null</code>입니다.</p>
@@ -804,7 +818,7 @@ const response = await api.patch(&quot;/user/profile_image&quot;, formData);</co
   &quot;state&quot;: &quot;success&quot;,
   &quot;message&quot;: &quot;이미지 수정 성공&quot;,
   &quot;data&quot;: {
-    &quot;user_profile&quot;: &quot;http://127.0.0.1:8080/profile_images/profile_x.jpg&quot;
+    &quot;user_profile&quot;: &quot;http://127.0.0.1:8080/uploads/images/user_profiles/profile_x.jpg&quot;
   }
 }</code></pre>
 <p>형식/용량 검증 실패는 현재 HTTP 200 + <code>state: &quot;failure&quot;</code>입니다.</p>
@@ -842,7 +856,7 @@ const response = await api.patch(&quot;/user/profile_image&quot;, formData);</co
   }
 }</code></pre>
 <table><thead><tr><th>구분</th><th>의미</th></tr></thead><tbody>
-<tr><td><code>explicit_preferences</code></td><td>사용자가 직접 선택해 User에 저장된 취향</td></tr>
+<tr><td><code>explicit_preferences</code></td><td>User의 <code>preferred_*</code> 배열에 저장된 취향. 현재는 직접 선택뿐 아니라 영화 좋아요로도 추가됨</td></tr>
 <tr><td><code>learned_preferences</code></td><td>조회, 검색 클릭, 좋아요 행동으로 누적된 취향 점수</td></tr>
 </tbody></table>
 <p>학습 점수는 소수점 셋째 자리까지 반올림됩니다. 감독/언어 등 내부 학습값은 현재 이 응답에서 제외됩니다.</p>
@@ -869,7 +883,7 @@ const response = await api.patch(&quot;/user/profile_image&quot;, formData);</co
     &quot;preferred_keywords&quot;: [&quot;dream&quot;]
   }
 }</code></pre>
-<p>이 API는 <code>explicit_preferences</code>만 삭제하며 학습된 점수 목록을 삭제하지 않습니다.</p>
+<p>이 API는 User의 <code>preferred_*</code> 배열 값만 삭제하며 학습된 점수 목록은 삭제하지 않습니다.</p>
 <h3>7.6 좋아요 영화</h3>
 <h3># <code>GET /user/movies-like</code></h3>
 <p>성공:</p>
@@ -907,7 +921,7 @@ const response = await api.patch(&quot;/user/profile_image&quot;, formData);</co
     &quot;movie_id&quot;: 1
   }
 }</code></pre>
-<p>삭제 시 좋아요로 반영된 랭킹/취향 점수도 함께 차감됩니다.</p>
+<p>삭제 시 좋아요로 반영된 랭킹/학습 취향 점수가 함께 차감됩니다. 취소한 영화의 장르·배우·키워드가 다른 좋아요 영화에서도 사용되지 않으면 User의 <code>preferred_*</code> 배열에서도 제거됩니다. 현재 구현은 값의 최초 추가 경로를 구분하지 않으므로, 같은 값을 사용자가 직접 선택했더라도 다른 좋아요 영화가 사용하지 않으면 함께 제거될 수 있습니다.</p>
 <h3>7.8 최근 상세 조회 영화</h3>
 <h3># <code>GET /user/recently-viewed?limit=5</code></h3>
 <table><thead><tr><th>Query</th><th>타입</th><th>기본값</th><th>제한</th></tr></thead><tbody>
@@ -1025,7 +1039,7 @@ const response = await api.patch(&quot;/user/profile_image&quot;, formData);</co
 
   return { kind: &quot;stream&quot; as const };
 }</code></pre>
-<p>백엔드는 AI 서버의 SSE line을 그대로 전달합니다. 현재 파서는 <code>data: &quot;문자열&quot;</code>, <code>data: {&quot;answer&quot;:&quot;...&quot;}</code>, <code>data: [DONE]</code> 형태를 방어적으로 처리합니다.</p>
+<p>백엔드는 AI 서버에서 받은 <code>data: &quot;문자열&quot;</code>과 <code>data: {&quot;answer&quot;:&quot;...&quot;}</code>를 파싱한 뒤, 프론트에는 답변 조각을 항상 JSON 문자열인 <code>data: &quot;...&quot;</code> 형식으로 정규화해 전달합니다. 답변 시작 부분의 <code>&lt;|channel...&gt;</code> 내부 제어 접두사는 제거하며, 종료 이벤트 <code>data: [DONE]</code>은 그대로 전달합니다. 따라서 프론트는 위 예시처럼 JSON 문자열을 우선 파싱하되, 이전 형식과의 호환을 위해 객체와 일반 문자열도 방어적으로 처리하는 것을 권장합니다.</p>
 <h3>8.2 일반 AI 채팅 시작</h3>
 <h3># <code>POST /chat/auto</code></h3>
 <p>인증: Access</p>
@@ -1222,20 +1236,258 @@ const response = await api.get(`/chatcharcter/${name}`);</code></pre>
 }</code></pre>
 <p>없는 방과 다른 사용자의 방은 동일하게 HTTP 200 + <code>state: &quot;failure&quot;</code>를 반환합니다.</p>
 <hr>
-<h2>9. System</h2>
-<h3>9.1 API 실행 확인</h3>
+<h2>9. Admin</h2>
+<p>모든 Admin API는 유효한 access token과 <code>users.is_admin === true</code>인 계정이 필요합니다.</p>
+<pre><code>Authorization: Bearer &lt;access_token&gt;</code></pre>
+<p>영화 수정·삭제 경로의 <code>{movie_id}</code>는 TMDB ID가 아니라 <code>movies.id</code>입니다. TMDB 검색과 등록에서만 외부 <code>tmdb_id</code>를 사용합니다.</p>
+<h3>9.1 관리자 공통 영화 타입</h3>
+<pre><code>type AdminMovie = {
+  movie_id: number;
+  tmdb_id: number | null;
+  title: string;
+  overview: string | null;
+  genres: string[];
+  director: string | null;
+  cast: string[];
+  keywords: string[];
+  year: number | null;
+  language: string | null;
+  vote_average: number | null;
+  vote_count: number | null;
+  audience_count: number | null;
+  poster_path: string | null;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+};</code></pre>
+<h3>9.2 관리자 권한 확인</h3>
+<h3># <code>GET /admin/check</code></h3>
+<p>인증: Admin</p>
+<p>관리자 화면 진입 전에 현재 로그인 계정의 권한을 확인합니다.</p>
+<pre><code>{
+  &quot;state&quot;: &quot;success&quot;,
+  &quot;message&quot;: &quot;관리자 권한 확인 성공&quot;,
+  &quot;data&quot;: {
+    &quot;email&quot;: &quot;admin@example.com&quot;,
+    &quot;is_admin&quot;: true
+  }
+}</code></pre>
+<h3>9.3 TMDB 영화 검색</h3>
+<h3># <code>GET /admin/tmdb-movies-search?query={검색어}&amp;page=1</code></h3>
+<p>인증: Admin</p>
+<table><thead><tr><th>Query</th><th>타입</th><th>필수</th><th>제한</th><th>설명</th></tr></thead><tbody>
+<tr><td><code>query</code></td><td>string</td><td>예</td><td>1~100자</td><td>TMDB에서 검색할 제목</td></tr>
+<tr><td><code>page</code></td><td>number</td><td>아니오</td><td>1~500, 기본 1</td><td>TMDB 검색 페이지</td></tr>
+</tbody></table>
+<p>검색 성공:</p>
+<pre><code>{
+  &quot;state&quot;: &quot;success&quot;,
+  &quot;message&quot;: &quot;TMDB 영화 검색 성공&quot;,
+  &quot;data&quot;: {
+    &quot;page&quot;: 1,
+    &quot;total_pages&quot;: 3,
+    &quot;total_results&quot;: 45,
+    &quot;movies&quot;: [
+      {
+        &quot;tmdb_id&quot;: 671,
+        &quot;title&quot;: &quot;해리 포터와 마법사의 돌&quot;,
+        &quot;original_title&quot;: &quot;Harry Potter and the Philosopher&#x27;s Stone&quot;,
+        &quot;release_date&quot;: &quot;2001-11-16&quot;,
+        &quot;year&quot;: 2001,
+        &quot;overview&quot;: &quot;줄거리&quot;,
+        &quot;poster_path&quot;: &quot;https://image.tmdb.org/t/p/w500/example.jpg&quot;,
+        &quot;vote_average&quot;: 7.9,
+        &quot;vote_count&quot;: 28000,
+        &quot;original_language&quot;: &quot;en&quot;,
+        &quot;is_registered&quot;: false
+      }
+    ]
+  }
+}</code></pre>
+<p><code>is_registered</code>는 해당 <code>tmdb_id</code>가 내부 DB에 이미 있는지 나타냅니다. 검색 결과가 없으면 같은 페이지 정보와 빈 <code>movies</code> 배열을 <code>state: &quot;failure&quot;</code>로 반환합니다.</p>
+<h3>9.4 TMDB 영화 등록</h3>
+<h3># <code>POST /admin/tmdb-movies-register/{tmdb_id}</code></h3>
+<p>인증: Admin</p>
+<p>TMDB 검색 결과에서 선택한 <code>tmdb_id</code>로 상세정보·감독·장르·키워드·출연진을 다시 조회해 저장합니다. 영화와 함께 <code>movie_genres</code>, <code>movie_stats</code>, 필요한 <code>actors</code>, <code>movie_actors</code>, <code>CREATE_MOVIE</code> 감사 로그가 하나의 트랜잭션으로 생성됩니다.</p>
+<p>성공:</p>
+<pre><code>{
+  &quot;state&quot;: &quot;success&quot;,
+  &quot;message&quot;: &quot;TMDB 영화 등록 성공&quot;,
+  &quot;data&quot;: {
+    &quot;movie_id&quot;: 5751,
+    &quot;tmdb_id&quot;: 671,
+    &quot;title&quot;: &quot;Harry Potter and the Philosopher&#x27;s Stone&quot;,
+    &quot;overview&quot;: &quot;줄거리&quot;,
+    &quot;genres&quot;: [&quot;모험&quot;, &quot;판타지&quot;],
+    &quot;director&quot;: &quot;Chris Columbus&quot;,
+    &quot;cast&quot;: [&quot;Daniel Radcliffe&quot;, &quot;Rupert Grint&quot;],
+    &quot;keywords&quot;: [&quot;magic&quot;, &quot;wizard&quot;],
+    &quot;year&quot;: 2001,
+    &quot;language&quot;: &quot;en&quot;,
+    &quot;vote_average&quot;: 7.9,
+    &quot;vote_count&quot;: 28000,
+    &quot;audience_count&quot;: null,
+    &quot;poster_path&quot;: &quot;https://image.tmdb.org/t/p/w500/example.jpg&quot;,
+    &quot;last_synced_at&quot;: &quot;2026-07-24T01:00:00+00:00&quot;,
+    &quot;created_at&quot;: &quot;2026-07-24T10:00:00+09:00&quot;,
+    &quot;updated_at&quot;: &quot;2026-07-24T10:00:00+09:00&quot;
+  }
+}</code></pre>
+<p>이미 등록된 TMDB 영화는 <code>state: &quot;failure&quot;</code>와 기존 <code>AdminMovie</code>를 반환합니다. <code>tmdb_id &lt;= 0</code>은 HTTP 422입니다.</p>
+<h3>9.5 직접 입력 영화 등록</h3>
+<h3># <code>POST /admin/movie</code></h3>
+<p>인증: Admin</p>
+<p>TMDB에서 찾을 수 없는 영화를 직접 등록합니다. <code>tmdb_id</code>, TMDB 평점, 포스터와 동기화 시각은 요청받지 않습니다.</p>
+<pre><code>type AdminManualMovieCreateRequest = {
+  title: string;
+  overview?: string | null;
+  genres?: string[];
+  director?: string | null;
+  cast?: string[];
+  keywords?: string[];
+  year?: number | null;
+  language?: string | null;
+  audience_count?: number | null;
+};</code></pre>
+<p>최소 요청:</p>
+<pre><code>{
+  &quot;title&quot;: &quot;직접 등록 영화&quot;
+}</code></pre>
+<p>전체 요청 예시:</p>
+<pre><code>{
+  &quot;title&quot;: &quot;직접 등록 영화&quot;,
+  &quot;overview&quot;: &quot;영화 줄거리&quot;,
+  &quot;genres&quot;: [&quot;독립&quot;, &quot;드라마&quot;],
+  &quot;director&quot;: &quot;감독 이름&quot;,
+  &quot;cast&quot;: [&quot;배우 A&quot;],
+  &quot;keywords&quot;: [&quot;독립영화&quot;],
+  &quot;year&quot;: 2026,
+  &quot;language&quot;: &quot;ko&quot;,
+  &quot;audience_count&quot;: 1000
+}</code></pre>
+<p>성공 메시지는 <code>&quot;직접 입력 영화 등록 성공&quot;</code>이며 <code>data</code>는 <code>AdminMovie</code>입니다. 제목과 개봉 연도가 모두 같은 영화가 있으면 <code>state: &quot;failure&quot;</code>와 기존 영화를 반환합니다.</p>
+<h3>9.6 영화 부분 수정</h3>
+<h3># <code>PATCH /admin/movie/{movie_id}</code></h3>
+<p>인증: Admin</p>
+<p><code>{movie_id}</code>는 내부 <code>movies.id</code>입니다. 요청에 실제로 포함된 필드만 변경되고 생략한 필드는 기존 값을 유지합니다.</p>
+<pre><code>type AdminMovieUpdateRequest = {
+  title?: string;
+  overview?: string | null;
+  genres?: string[];
+  director?: string | null;
+  cast?: string[];
+  keywords?: string[];
+  year?: number | null;
+  language?: string | null;
+  audience_count?: number | null;
+};</code></pre>
+<pre><code>{
+  &quot;overview&quot;: &quot;수정된 줄거리&quot;,
+  &quot;genres&quot;: [&quot;판타지&quot;, &quot;가족&quot;]
+}</code></pre>
+<p>수정 규칙:</p>
+<table><thead><tr><th>요청</th><th>결과</th></tr></thead><tbody>
+<tr><td>필드 생략</td><td>기존 값 유지</td></tr>
+<tr><td><code>overview</code>, <code>director</code>, <code>year</code>, <code>language</code>, <code>audience_count</code>에 <code>null</code></td><td>기존 선택값 제거</td></tr>
+<tr><td><code>genres</code>, <code>cast</code>, <code>keywords</code>에 <code>[]</code></td><td>해당 목록 전체 제거</td></tr>
+<tr><td><code>title: null</code></td><td>HTTP 422</td></tr>
+<tr><td>목록 필드에 <code>null</code></td><td>HTTP 422</td></tr>
+<tr><td>빈 객체 <code>{}</code></td><td>HTTP 422</td></tr>
+<tr><td>정의되지 않은 필드</td><td>HTTP 422</td></tr>
+<tr><td>기존 값과 모두 동일</td><td>HTTP 200 + <code>state: &quot;failure&quot;</code></td></tr>
+<tr><td>TMDB 영화에 <code>cast</code> 포함</td><td>HTTP 200 + <code>state: &quot;failure&quot;</code></td></tr>
+</tbody></table>
+<p>TMDB 영화는 <code>movies.cast</code>, <code>actors</code>, <code>movie_actors</code>의 관계가 함께 사용되므로 배우를 직접 수정할 수 없습니다. 직접 입력 영화는 <code>cast</code>를 수정할 수 있습니다.</p>
+<p>성공 메시지는 <code>&quot;영화 수정 성공&quot;</code>이며 수정 후 <code>AdminMovie</code>를 반환합니다. 장르는 <code>movies.genres</code>와 <code>movie_genres</code>에 함께 반영되고 <code>UPDATE_MOVIE</code> 감사 로그가 생성됩니다.</p>
+<h3>9.7 영화 삭제</h3>
+<h3># <code>DELETE /admin/movie/{movie_id}</code></h3>
+<p>인증: Admin</p>
+<p><code>{movie_id}</code>는 내부 <code>movies.id</code>입니다. 삭제 성공 시 삭제 전 <code>AdminMovie</code>를 반환하고 <code>DELETE_MOVIE</code> 감사 로그를 기록합니다.</p>
+<pre><code>{
+  &quot;state&quot;: &quot;success&quot;,
+  &quot;message&quot;: &quot;영화 삭제 성공&quot;,
+  &quot;data&quot;: {
+    &quot;movie_id&quot;: 5751,
+    &quot;tmdb_id&quot;: null,
+    &quot;title&quot;: &quot;삭제한 영화&quot;
+  }
+}</code></pre>
+<p>영화 삭제 시 장르, 통계와 영화-배우 연결 행은 외래키 정책에 따라 함께 삭제되지만 재사용 가능한 <code>actors</code> 행 자체는 유지됩니다. 외부 TMDB 데이터는 삭제되지 않습니다. 대상이 없으면 HTTP 200 + <code>state: &quot;failure&quot;</code>입니다.</p>
+<h3>9.8 사용자 관리자 권한 변경</h3>
+<h3># <code>PATCH /admin/users/admin-role</code></h3>
+<p>인증: Admin</p>
+<p>이메일로 가입 사용자를 찾아 관리자 권한을 부여하거나 회수합니다. 이메일 검색은 대소문자를 구분하지 않습니다.</p>
+<pre><code>{
+  &quot;email&quot;: &quot;user@example.com&quot;,
+  &quot;is_admin&quot;: true
+}</code></pre>
+<p>권한 부여 성공:</p>
+<pre><code>{
+  &quot;state&quot;: &quot;success&quot;,
+  &quot;message&quot;: &quot;관리자 권한을 부여했습니다.&quot;,
+  &quot;data&quot;: {
+    &quot;user_id&quot;: 15,
+    &quot;email&quot;: &quot;user@example.com&quot;,
+    &quot;nickname&quot;: &quot;무비팬&quot;,
+    &quot;is_admin&quot;: true
+  }
+}</code></pre>
+<p>권한 회수 성공 시 <code>message</code>는 <code>&quot;관리자 권한을 회수했습니다.&quot;</code>, <code>data.is_admin</code>은 <code>false</code>입니다. 성공한 변경은 <code>GRANT_ADMIN</code> 또는 <code>REVOKE_ADMIN</code> 감사 로그로 기록됩니다.</p>
+<p>현재 알려진 응답 제약:</p>
+<table><thead><tr><th>상황</th><th>서비스의 의도</th><th>현재 실제 응답</th></tr></thead><tbody>
+<tr><td>가입 사용자가 없음</td><td>404 <code>USER_NOT_FOUND</code></td><td>HTTP 200 + <code>state: &quot;error&quot;</code></td></tr>
+<tr><td>관리자가 자기 권한을 회수</td><td>409 <code>CANNOT_REVOKE_SELF</code></td><td>HTTP 200 + <code>state: &quot;error&quot;</code></td></tr>
+<tr><td>이미 요청한 권한과 동일</td><td>409 <code>ADMIN_ROLE_UNCHANGED</code></td><td>HTTP 200 + <code>state: &quot;error&quot;</code></td></tr>
+</tbody></table>
+<p>라우터의 <code>except Exception</code>이 <code>HTTPException</code>까지 잡기 때문에 현재 프론트는 HTTP 상태만 보지 말고 <code>state</code>를 반드시 확인해야 합니다.</p>
+<h3>9.9 Admin 공통 인증·검증 오류</h3>
+<table><thead><tr><th>HTTP</th><th>상황</th><th><code>detail.code</code></th></tr></thead><tbody>
+<tr><td>401</td><td>토큰 없음</td><td><code>LOGIN_REQUIRED</code></td></tr>
+<tr><td>401</td><td>access token 만료</td><td><code>ACCESS_TOKEN_EXPIRED</code></td></tr>
+<tr><td>401</td><td>잘못된 토큰</td><td><code>INVALID_ACCESS_TOKEN</code></td></tr>
+<tr><td>401</td><td>토큰 타입 오류</td><td><code>INVALID_TOKEN_TYPE</code></td></tr>
+<tr><td>401</td><td>토큰 사용자 없음</td><td>코드 없음</td></tr>
+<tr><td>403</td><td>로그인했지만 일반 사용자</td><td>코드 없음</td></tr>
+<tr><td>422</td><td>Path·Query·요청 본문 검증 실패</td><td>FastAPI 기본 <code>detail[]</code></td></tr>
+</tbody></table>
+<p>일반 사용자 접근:</p>
+<pre><code>{
+  &quot;detail&quot;: {
+    &quot;state&quot;: &quot;failure&quot;,
+    &quot;message&quot;: &quot;관리자 권한이 필요합니다.&quot;
+  }
+}</code></pre>
+<h3>9.10 프론트 호출 예시</h3>
+<pre><code>export async function updateAdminMovie(
+  movieId: number,
+  payload: AdminMovieUpdateRequest,
+) {
+  const response = await api.patch&lt;ApiResponse&lt;AdminMovie&gt;&gt;(
+    `/admin/movie/${movieId}`,
+    payload,
+  );
+
+  if (response.data.state !== &quot;success&quot;) {
+    throw new Error(response.data.error ?? response.data.message);
+  }
+
+  return response.data.data;
+}</code></pre>
+<hr>
+<h2>10. System</h2>
+<h3>10.1 API 실행 확인</h3>
 <h3># <code>GET /</code></h3>
 <pre><code>{
   &quot;state&quot;: &quot;success&quot;,
   &quot;message&quot;: &quot;CineVerse API is running&quot;
 }</code></pre>
-<h3>9.2 백엔드 상태</h3>
+<h3>10.2 백엔드 상태</h3>
 <h3># <code>GET /health</code></h3>
 <pre><code>{
   &quot;state&quot;: &quot;success&quot;,
   &quot;message&quot;: &quot;CineVerse&quot;
 }</code></pre>
-<h3>9.3 DB 연결 확인</h3>
+<h3>10.3 DB 연결 확인</h3>
 <h3># <code>GET /db-test</code></h3>
 <p>성공:</p>
 <pre><code>{
@@ -1243,7 +1495,7 @@ const response = await api.get(`/chatcharcter/${name}`);</code></pre>
   &quot;message&quot;: &quot;PostgreSQL 연결 성공&quot;
 }</code></pre>
 <p>실패 시 이 API는 <code>state</code>가 아니라 <code>status: &quot;failure&quot;</code>를 사용합니다.</p>
-<h3>9.4 AI 서버 연결 확인</h3>
+<h3>10.4 AI 서버 연결 확인</h3>
 <h3># <code>GET /ai-health</code></h3>
 <p>성공:</p>
 <pre><code>{
@@ -1254,31 +1506,38 @@ const response = await api.get(`/chatcharcter/${name}`);</code></pre>
 }</code></pre>
 <p>AI 서버 timeout/연결 실패도 현재 HTTP 200 + <code>state: &quot;error&quot;</code>입니다.</p>
 <hr>
-<h2>10. 프론트 체크리스트</h2>
-<h3>10.1 인증</h3>
+<h2>11. 프론트 체크리스트</h2>
+<h3>11.1 인증</h3>
 <ul>
 <li>로그인, refresh, logout 요청에 cookie 포함 옵션을 켰는가?</li>
 <li>access token을 회원 전용 요청의 Bearer 헤더에 넣었는가?</li>
 <li>HTTP 401 중 <code>ACCESS_TOKEN_EXPIRED</code>에서만 refresh 후 1회 재시도하는가?</li>
 <li>refresh 실패/로그아웃 시 프론트 access token을 삭제하는가?</li>
 <li>로컬 개발에서 <code>localhost</code>와 <code>127.0.0.1</code>을 섞지 않았는가?</li>
+<li>관리자 API 호출 전에 <code>/admin/check</code>로 권한을 확인하는가?</li>
 </ul>
-<h3>10.2 응답</h3>
+<h3>11.2 응답</h3>
 <ul>
 <li>HTTP 200이어도 <code>state === &quot;failure&quot; | &quot;error&quot;</code>를 처리하는가?</li>
 <li>회원가입의 <code>status</code> 키를 처리하는가?</li>
 <li><code>HTTPException</code> 오류의 <code>detail</code> 래퍼를 처리하는가?</li>
 <li>422 <code>detail[]</code>을 폼 필드 오류로 변환하는가?</li>
 <li>랭킹 API의 raw array를 별도로 처리하는가?</li>
+<li>관리자 권한 변경은 HTTP 200이어도 <code>state === &quot;error&quot;</code>일 수 있음을 처리하는가?</li>
+<li>관리자 영화 API의 <code>failure</code> 응답도 HTTP 200일 수 있음을 처리하는가?</li>
 </ul>
-<h3>10.3 영화/이미지</h3>
+<h3>11.3 영화/이미지</h3>
 <ul>
 <li><code>poster_path</code>와 <code>poster_url</code>의 상대/전체 URL을 모두 처리하는가?</li>
 <li>오늘의 추천 <code>genres</code>/<code>cast</code>가 문자열일 수 있음을 처리하는가?</li>
 <li>검색 결과의 키가 <code>keywords</code>가 아니라 <code>keyword</code>임을 반영했는가?</li>
 <li>랭킹의 ID 키가 <code>movie_id</code>가 아니라 <code>id</code>임을 반영했는가?</li>
+<li>관리자 수정·삭제에는 <code>tmdb_id</code>가 아닌 내부 <code>movie_id</code>를 사용하는가?</li>
+<li>TMDB 영화는 <code>cast</code> 수정 UI를 비활성화했는가?</li>
+<li>관리자 수정에서 목록 전체 제거 시 <code>null</code>이 아닌 빈 배열을 보내는가?</li>
+<li>프로필 이미지의 <code>/uploads/images/user_profiles/</code> 경로를 처리하는가?</li>
 </ul>
-<h3>10.4 채팅</h3>
+<h3>11.4 채팅</h3>
 <ul>
 <li><code>POST /chat</code> 요청에서 <code>stream</code> 필드를 보내지 않는가?</li>
 <li>SSE/JSON을 <code>content-type</code>으로 분기하는가?</li>
@@ -1286,7 +1545,7 @@ const response = await api.get(`/chatcharcter/${name}`);</code></pre>
 <li>캐릭터 이름과 한글 path parameter를 <code>encodeURIComponent</code> 처리하는가?</li>
 <li>새 1:1 SSE 방의 <code>room_id</code>가 필요하면 스트림 종료 후 방 목록을 갱신하는가?</li>
 </ul>
-<h3>10.5 현재 백엔드 정리 우선순위</h3>
+<h3>11.5 현재 백엔드 정리 우선순위</h3>
 <p>프론트가 임시 분기 없이 연동하려면 백엔드에서 아래 항목을 우선 정리하는 것이 좋습니다.</p>
 <p>1. <code>/chatcharcter/{name}</code>을 <code>/chat/character/{name}</code>으로 수정</p>
 <p>2. <code>/user/chatai-reommended-movies</code> 경로 오타 수정</p>
@@ -1295,6 +1554,8 @@ const response = await api.get(`/chatcharcter/${name}`);</code></pre>
 <p>5. 기존 채팅방 이어가기의 일반 JSON/그룹/SSE 정책 확정</p>
 <p>6. SSE 시작 이벤트에 <code>room_id</code> 포함</p>
 <p>7. OpenAPI response model 보강</p>
+<p>8. 관리자 권한 변경의 <code>HTTPException</code>이 일반 예외 응답으로 바뀌는 문제 수정</p>
+<p>8. 관리자 권한 변경 라우터에서 <code>HTTPException</code>을 그대로 다시 발생시켜 404/409 유지</p>
 <p>경로 오타를 수정할 때는 프론트 배포와 동시에 바꾸거나, 일정 기간 기존 경로와 새 경로를 함께 제공하는 방식이 안전합니다.</p>
 </body>
 </html>

@@ -9,6 +9,7 @@ from app.api.auth import router as auth_router
 from app.api.movies import router as movies_router
 from app.api.chat import router as chat_router
 from app.api.users import router as users_router
+from app.api.admin import router as admin_router
 from sqlalchemy.orm import Session
 from app.core.dependencies import get_db
 from app.core.config import settings
@@ -21,20 +22,32 @@ app = FastAPI()
 async def no_store_private_api_cache(request, call_next):
     response = await call_next(request)
 
-    # 브라우저나 중간 캐시 서버 응답을 저장 못하게 설정
-    if request.url.path.startswith(("/auth", "/chat", "/user")):
+    # 인증·개인정보 응답뿐 아니라 관리자 검색·권한·데이터 변경 응답에도
+    # 민감한 정보가 포함될 수 있으므로 브라우저와 중간 캐시 서버가
+    # 해당 API 응답을 저장하거나 재사용하지 못하도록 설정한다.
+    if request.url.path.startswith(("/auth", "/chat", "/user", "/admin")):
         response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         response.headers["Pragma"] = "no-cache"
         response.headers["Expires"] = "0"
 
     return response
 
-# 프로필 이미지 url 반환
-PROFILE_IMAGE_DIR = Path(__file__).resolve().parent / "profile_images"
+# 사용자 프로필, 영화 포스터, 배우 프로필처럼 서비스에서 업로드하는 파일을
+# 한 경로에서 관리할 수 있도록 app/uploads 폴더 전체를 정적 파일 경로로 사용한다.
+# Path(__file__).resolve().parent는 현재 main.py가 위치한 app 폴더를 의미한다.
+UPLOAD_DIR = Path(__file__).resolve().parent / "uploads"
+
+# 실행 환경에 uploads 폴더가 없으면 StaticFiles 연결 과정에서 오류가 발생할 수 있다.
+# 필요한 상위 폴더까지 생성하되, 이미 폴더가 있는 경우에는 그대로 사용한다.
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+# 브라우저에서 /uploads로 시작하는 URL을 요청하면 app/uploads 내부 파일을 반환한다.
+# 예: /uploads/images/user_profiles/profile.jpg
+#     -> app/uploads/images/user_profiles/profile.jpg
 app.mount(
-    "/profile_images",
-    StaticFiles(directory=PROFILE_IMAGE_DIR),
-    name="/profile_images"
+    "/uploads",
+    StaticFiles(directory=UPLOAD_DIR),
+    name="uploads",
 )
 
 
@@ -64,6 +77,9 @@ app.include_router(chat_router)
 
 # /users router 등록
 app.include_router(users_router)
+
+# /admin router 등록
+app.include_router(admin_router)
 
 @app.get("/")
 def index():
@@ -141,5 +157,5 @@ async def ai_health_check():
 if __name__ =="__main__":
     # 작성된 파일을 main.py로 저장했을 경우를 가정하고 서버를 실행합니다.
     # 포트를 8080으로 지정하여 localhost:8080에서 확인 가능하도록 설정합니다.
-    # uvicorn.run("main:app", host="127.0.0.1", port=8080, reload=True)
-    uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)
+    uvicorn.run("main:app", host="127.0.0.1", port=8080, reload=True)
+    # uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)

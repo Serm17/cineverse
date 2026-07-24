@@ -1,8 +1,8 @@
 # CineVerse 프론트엔드 API 연동 명세
 
-> 작성 기준: 2026-07-15
+> 작성 기준: 2026-07-24
 > 기준 코드: `app/main.py`, `app/api/*`, `app/schemas/*`, `app/services/*`  
-> 현재 OpenAPI: URL path 38개 / HTTP operation 39개
+> 현재 OpenAPI: URL path 44개 / HTTP operation 46개
 
 이 문서는 프론트엔드가 현재 백엔드에 바로 연동할 수 있도록 실제 요청 형식, 응답 필드, 인증 방식, 예외 사항을 한곳에 정리한 문서입니다.
 
@@ -16,8 +16,9 @@
 - [6. Movies](#6-movies)
 - [7. User](#7-user)
 - [8. Chat](#8-chat)
-- [9. System](#9-system)
-- [10. 프론트 체크리스트](#10-프론트-체크리스트)
+- [9. Admin](#9-admin)
+- [10. System](#10-system)
+- [11. 프론트 체크리스트](#11-프론트-체크리스트)
 
 ---
 
@@ -54,6 +55,9 @@
 | 기존 대화 이어가기 | 성공 시 항상 SSE이며 캐릭터가 필요함 | `content-type`을 먼저 확인 |
 | 캐릭터 상세 경로 | 실제 경로가 `/chatcharcter/{character_name}` | 오타 경로 그대로 호출 |
 | 채팅 추천 목록 경로 | 실제 경로가 `/user/chatai-reommended-movies` | 오타 경로 그대로 호출 |
+| 관리자 권한 변경 실패 | 대상 없음/중복 권한/본인 권한 회수도 현재 HTTP 200 + `state: "error"` 반환 | `response.ok`가 아니라 `state` 확인 |
+| 관리자 영화 ID | 수정·삭제의 `{movie_id}`는 TMDB ID가 아니라 내부 `movies.id` | 관리자 영화 검색 결과의 `movie_id` 사용 |
+| TMDB 배우 수정 | TMDB 등록 영화에 `cast`를 보내면 `state: "failure"` | 해당 영화의 배우 변경 UI 비활성화 |
 | 영화 이미지 | `poster_path`/`poster_url`이 상대 경로 또는 전체 URL일 수 있음 | 이미지 URL 정규화 함수 사용 |
 | Refresh cookie | cookie path가 `/auth`, `SameSite=Lax`, 개발 환경 `Secure=false` | 프론트/API의 host 표기를 통일 |
 
@@ -374,7 +378,19 @@ export function resolveMovieImage(path?: string | null) {
 | POST | `/chat/rooms/{room_id}/messages` | Access | SSE/JSON | 기존 캐릭터 대화 이어가기 |
 | DELETE | `/chat/rooms/{room_id}` | Access | JSON | 채팅방 삭제 |
 
-### 4.5 System
+### 4.5 Admin
+
+| Method | Path | 인증 | 용도 |
+| --- | --- | --- | --- |
+| GET | `/admin/check` | Admin | 현재 사용자의 관리자 권한 확인 |
+| GET | `/admin/tmdb-movies-search` | Admin | TMDB 영화 검색 및 내부 등록 여부 확인 |
+| POST | `/admin/tmdb-movies-register/{tmdb_id}` | Admin | TMDB 상세정보로 영화·장르·배우 등록 |
+| POST | `/admin/movie` | Admin | TMDB에 없는 영화 직접 등록 |
+| PATCH | `/admin/movie/{movie_id}` | Admin | 내부 영화 ID 기준 부분 수정 |
+| DELETE | `/admin/movie/{movie_id}` | Admin | 내부 영화 ID 기준 삭제 |
+| PATCH | `/admin/users/admin-role` | Admin | 이메일로 사용자 관리자 권한 부여/회수 |
+
+### 4.6 System
 
 | Method | Path | 인증 | 설명 |
 | --- | --- | --- | --- |
@@ -1033,7 +1049,7 @@ GET /movies/search?keyword=인셉션&page=1&limit=20
   "data": {
     "email": "user@example.com",
     "nickname": "무비러버",
-    "profile_image": "http://127.0.0.1:8080/profile_images/profile_x.jpg"
+    "profile_image": "http://127.0.0.1:8080/uploads/images/user_profiles/profile_x.jpg"
   }
 }
 ```
@@ -1066,7 +1082,7 @@ const response = await api.patch("/user/profile_image", formData);
   "state": "success",
   "message": "이미지 수정 성공",
   "data": {
-    "user_profile": "http://127.0.0.1:8080/profile_images/profile_x.jpg"
+    "user_profile": "http://127.0.0.1:8080/uploads/images/user_profiles/profile_x.jpg"
   }
 }
 ```
@@ -1656,9 +1672,346 @@ const response = await api.get(`/chatcharcter/${name}`);
 
 ---
 
-## 9. System
+## 9. Admin
 
-### 9.1 API 실행 확인
+모든 Admin API는 유효한 access token과 `users.is_admin === true`인 계정이 필요합니다.
+
+```http
+Authorization: Bearer <access_token>
+```
+
+영화 수정·삭제 경로의 `{movie_id}`는 TMDB ID가 아니라 `movies.id`입니다. TMDB 검색과 등록에서만 외부 `tmdb_id`를 사용합니다.
+
+### 9.1 관리자 공통 영화 타입
+
+```ts
+type AdminMovie = {
+  movie_id: number;
+  tmdb_id: number | null;
+  title: string;
+  overview: string | null;
+  genres: string[];
+  director: string | null;
+  cast: string[];
+  keywords: string[];
+  year: number | null;
+  language: string | null;
+  vote_average: number | null;
+  vote_count: number | null;
+  audience_count: number | null;
+  poster_path: string | null;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+```
+
+### 9.2 관리자 권한 확인
+
+#### `GET /admin/check`
+
+인증: Admin
+
+관리자 화면 진입 전에 현재 로그인 계정의 권한을 확인합니다.
+
+```json
+{
+  "state": "success",
+  "message": "관리자 권한 확인 성공",
+  "data": {
+    "email": "admin@example.com",
+    "is_admin": true
+  }
+}
+```
+
+### 9.3 TMDB 영화 검색
+
+#### `GET /admin/tmdb-movies-search?query={검색어}&page=1`
+
+인증: Admin
+
+| Query | 타입 | 필수 | 제한 | 설명 |
+| --- | --- | --- | --- | --- |
+| `query` | string | 예 | 1~100자 | TMDB에서 검색할 제목 |
+| `page` | number | 아니오 | 1~500, 기본 1 | TMDB 검색 페이지 |
+
+검색 성공:
+
+```json
+{
+  "state": "success",
+  "message": "TMDB 영화 검색 성공",
+  "data": {
+    "page": 1,
+    "total_pages": 3,
+    "total_results": 45,
+    "movies": [
+      {
+        "tmdb_id": 671,
+        "title": "해리 포터와 마법사의 돌",
+        "original_title": "Harry Potter and the Philosopher's Stone",
+        "release_date": "2001-11-16",
+        "year": 2001,
+        "overview": "줄거리",
+        "poster_path": "https://image.tmdb.org/t/p/w500/example.jpg",
+        "vote_average": 7.9,
+        "vote_count": 28000,
+        "original_language": "en",
+        "is_registered": false
+      }
+    ]
+  }
+}
+```
+
+`is_registered`는 해당 `tmdb_id`가 내부 DB에 이미 있는지 나타냅니다. 검색 결과가 없으면 같은 페이지 정보와 빈 `movies` 배열을 `state: "failure"`로 반환합니다.
+
+### 9.4 TMDB 영화 등록
+
+#### `POST /admin/tmdb-movies-register/{tmdb_id}`
+
+인증: Admin
+
+TMDB 검색 결과에서 선택한 `tmdb_id`로 상세정보·감독·장르·키워드·출연진을 다시 조회해 저장합니다. 영화와 함께 `movie_genres`, `movie_stats`, 필요한 `actors`, `movie_actors`, `CREATE_MOVIE` 감사 로그가 하나의 트랜잭션으로 생성됩니다.
+
+성공:
+
+```json
+{
+  "state": "success",
+  "message": "TMDB 영화 등록 성공",
+  "data": {
+    "movie_id": 5751,
+    "tmdb_id": 671,
+    "title": "Harry Potter and the Philosopher's Stone",
+    "overview": "줄거리",
+    "genres": ["모험", "판타지"],
+    "director": "Chris Columbus",
+    "cast": ["Daniel Radcliffe", "Rupert Grint"],
+    "keywords": ["magic", "wizard"],
+    "year": 2001,
+    "language": "en",
+    "vote_average": 7.9,
+    "vote_count": 28000,
+    "audience_count": null,
+    "poster_path": "https://image.tmdb.org/t/p/w500/example.jpg",
+    "last_synced_at": "2026-07-24T01:00:00+00:00",
+    "created_at": "2026-07-24T10:00:00+09:00",
+    "updated_at": "2026-07-24T10:00:00+09:00"
+  }
+}
+```
+
+이미 등록된 TMDB 영화는 `state: "failure"`와 기존 `AdminMovie`를 반환합니다. `tmdb_id <= 0`은 HTTP 422입니다.
+
+### 9.5 직접 입력 영화 등록
+
+#### `POST /admin/movie`
+
+인증: Admin
+
+TMDB에서 찾을 수 없는 영화를 직접 등록합니다. `tmdb_id`, TMDB 평점, 포스터와 동기화 시각은 요청받지 않습니다.
+
+```ts
+type AdminManualMovieCreateRequest = {
+  title: string;
+  overview?: string | null;
+  genres?: string[];
+  director?: string | null;
+  cast?: string[];
+  keywords?: string[];
+  year?: number | null;
+  language?: string | null;
+  audience_count?: number | null;
+};
+```
+
+최소 요청:
+
+```json
+{
+  "title": "직접 등록 영화"
+}
+```
+
+전체 요청 예시:
+
+```json
+{
+  "title": "직접 등록 영화",
+  "overview": "영화 줄거리",
+  "genres": ["독립", "드라마"],
+  "director": "감독 이름",
+  "cast": ["배우 A"],
+  "keywords": ["독립영화"],
+  "year": 2026,
+  "language": "ko",
+  "audience_count": 1000
+}
+```
+
+성공 메시지는 `"직접 입력 영화 등록 성공"`이며 `data`는 `AdminMovie`입니다. 제목과 개봉 연도가 모두 같은 영화가 있으면 `state: "failure"`와 기존 영화를 반환합니다.
+
+### 9.6 영화 부분 수정
+
+#### `PATCH /admin/movie/{movie_id}`
+
+인증: Admin
+
+`{movie_id}`는 내부 `movies.id`입니다. 요청에 실제로 포함된 필드만 변경되고 생략한 필드는 기존 값을 유지합니다.
+
+```ts
+type AdminMovieUpdateRequest = {
+  title?: string;
+  overview?: string | null;
+  genres?: string[];
+  director?: string | null;
+  cast?: string[];
+  keywords?: string[];
+  year?: number | null;
+  language?: string | null;
+  audience_count?: number | null;
+};
+```
+
+```json
+{
+  "overview": "수정된 줄거리",
+  "genres": ["판타지", "가족"]
+}
+```
+
+수정 규칙:
+
+| 요청 | 결과 |
+| --- | --- |
+| 필드 생략 | 기존 값 유지 |
+| `overview`, `director`, `year`, `language`, `audience_count`에 `null` | 기존 선택값 제거 |
+| `genres`, `cast`, `keywords`에 `[]` | 해당 목록 전체 제거 |
+| `title: null` | HTTP 422 |
+| 목록 필드에 `null` | HTTP 422 |
+| 빈 객체 `{}` | HTTP 422 |
+| 정의되지 않은 필드 | HTTP 422 |
+| 기존 값과 모두 동일 | HTTP 200 + `state: "failure"` |
+| TMDB 영화에 `cast` 포함 | HTTP 200 + `state: "failure"` |
+
+TMDB 영화는 `movies.cast`, `actors`, `movie_actors`의 관계가 함께 사용되므로 배우를 직접 수정할 수 없습니다. 직접 입력 영화는 `cast`를 수정할 수 있습니다.
+
+성공 메시지는 `"영화 수정 성공"`이며 수정 후 `AdminMovie`를 반환합니다. 장르는 `movies.genres`와 `movie_genres`에 함께 반영되고 `UPDATE_MOVIE` 감사 로그가 생성됩니다.
+
+### 9.7 영화 삭제
+
+#### `DELETE /admin/movie/{movie_id}`
+
+인증: Admin
+
+`{movie_id}`는 내부 `movies.id`입니다. 삭제 성공 시 삭제 전 `AdminMovie`를 반환하고 `DELETE_MOVIE` 감사 로그를 기록합니다.
+
+```json
+{
+  "state": "success",
+  "message": "영화 삭제 성공",
+  "data": {
+    "movie_id": 5751,
+    "tmdb_id": null,
+    "title": "삭제한 영화"
+  }
+}
+```
+
+영화 삭제 시 장르, 통계와 영화-배우 연결 행은 외래키 정책에 따라 함께 삭제되지만 재사용 가능한 `actors` 행 자체는 유지됩니다. 외부 TMDB 데이터는 삭제되지 않습니다. 대상이 없으면 HTTP 200 + `state: "failure"`입니다.
+
+### 9.8 사용자 관리자 권한 변경
+
+#### `PATCH /admin/users/admin-role`
+
+인증: Admin
+
+이메일로 가입 사용자를 찾아 관리자 권한을 부여하거나 회수합니다. 이메일 검색은 대소문자를 구분하지 않습니다.
+
+```json
+{
+  "email": "user@example.com",
+  "is_admin": true
+}
+```
+
+권한 부여 성공:
+
+```json
+{
+  "state": "success",
+  "message": "관리자 권한을 부여했습니다.",
+  "data": {
+    "user_id": 15,
+    "email": "user@example.com",
+    "nickname": "무비팬",
+    "is_admin": true
+  }
+}
+```
+
+권한 회수 성공 시 `message`는 `"관리자 권한을 회수했습니다."`, `data.is_admin`은 `false`입니다. 성공한 변경은 `GRANT_ADMIN` 또는 `REVOKE_ADMIN` 감사 로그로 기록됩니다.
+
+현재 알려진 응답 제약:
+
+| 상황 | 서비스의 의도 | 현재 실제 응답 |
+| --- | --- | --- |
+| 가입 사용자가 없음 | 404 `USER_NOT_FOUND` | HTTP 200 + `state: "error"` |
+| 관리자가 자기 권한을 회수 | 409 `CANNOT_REVOKE_SELF` | HTTP 200 + `state: "error"` |
+| 이미 요청한 권한과 동일 | 409 `ADMIN_ROLE_UNCHANGED` | HTTP 200 + `state: "error"` |
+
+라우터의 `except Exception`이 `HTTPException`까지 잡기 때문에 현재 프론트는 HTTP 상태만 보지 말고 `state`를 반드시 확인해야 합니다.
+
+### 9.9 Admin 공통 인증·검증 오류
+
+| HTTP | 상황 | `detail.code` |
+| --- | --- | --- |
+| 401 | 토큰 없음 | `LOGIN_REQUIRED` |
+| 401 | access token 만료 | `ACCESS_TOKEN_EXPIRED` |
+| 401 | 잘못된 토큰 | `INVALID_ACCESS_TOKEN` |
+| 401 | 토큰 타입 오류 | `INVALID_TOKEN_TYPE` |
+| 401 | 토큰 사용자 없음 | 코드 없음 |
+| 403 | 로그인했지만 일반 사용자 | 코드 없음 |
+| 422 | Path·Query·요청 본문 검증 실패 | FastAPI 기본 `detail[]` |
+
+일반 사용자 접근:
+
+```json
+{
+  "detail": {
+    "state": "failure",
+    "message": "관리자 권한이 필요합니다."
+  }
+}
+```
+
+### 9.10 프론트 호출 예시
+
+```ts
+export async function updateAdminMovie(
+  movieId: number,
+  payload: AdminMovieUpdateRequest,
+) {
+  const response = await api.patch<ApiResponse<AdminMovie>>(
+    `/admin/movie/${movieId}`,
+    payload,
+  );
+
+  if (response.data.state !== "success") {
+    throw new Error(response.data.error ?? response.data.message);
+  }
+
+  return response.data.data;
+}
+```
+
+---
+
+## 10. System
+
+### 10.1 API 실행 확인
 
 #### `GET /`
 
@@ -1669,7 +2022,7 @@ const response = await api.get(`/chatcharcter/${name}`);
 }
 ```
 
-### 9.2 백엔드 상태
+### 10.2 백엔드 상태
 
 #### `GET /health`
 
@@ -1680,7 +2033,7 @@ const response = await api.get(`/chatcharcter/${name}`);
 }
 ```
 
-### 9.3 DB 연결 확인
+### 10.3 DB 연결 확인
 
 #### `GET /db-test`
 
@@ -1695,7 +2048,7 @@ const response = await api.get(`/chatcharcter/${name}`);
 
 실패 시 이 API는 `state`가 아니라 `status: "failure"`를 사용합니다.
 
-### 9.4 AI 서버 연결 확인
+### 10.4 AI 서버 연결 확인
 
 #### `GET /ai-health`
 
@@ -1714,32 +2067,39 @@ AI 서버 timeout/연결 실패도 현재 HTTP 200 + `state: "error"`입니다.
 
 ---
 
-## 10. 프론트 체크리스트
+## 11. 프론트 체크리스트
 
-### 10.1 인증
+### 11.1 인증
 
 - 로그인, refresh, logout 요청에 cookie 포함 옵션을 켰는가?
 - access token을 회원 전용 요청의 Bearer 헤더에 넣었는가?
 - HTTP 401 중 `ACCESS_TOKEN_EXPIRED`에서만 refresh 후 1회 재시도하는가?
 - refresh 실패/로그아웃 시 프론트 access token을 삭제하는가?
 - 로컬 개발에서 `localhost`와 `127.0.0.1`을 섞지 않았는가?
+- 관리자 API 호출 전에 `/admin/check`로 권한을 확인하는가?
 
-### 10.2 응답
+### 11.2 응답
 
 - HTTP 200이어도 `state === "failure" | "error"`를 처리하는가?
 - 회원가입의 `status` 키를 처리하는가?
 - `HTTPException` 오류의 `detail` 래퍼를 처리하는가?
 - 422 `detail[]`을 폼 필드 오류로 변환하는가?
 - 랭킹 API의 raw array를 별도로 처리하는가?
+- 관리자 권한 변경은 HTTP 200이어도 `state === "error"`일 수 있음을 처리하는가?
+- 관리자 영화 API의 `failure` 응답도 HTTP 200일 수 있음을 처리하는가?
 
-### 10.3 영화/이미지
+### 11.3 영화/이미지
 
 - `poster_path`와 `poster_url`의 상대/전체 URL을 모두 처리하는가?
 - 오늘의 추천 `genres`/`cast`가 문자열일 수 있음을 처리하는가?
 - 검색 결과의 키가 `keywords`가 아니라 `keyword`임을 반영했는가?
 - 랭킹의 ID 키가 `movie_id`가 아니라 `id`임을 반영했는가?
+- 관리자 수정·삭제에는 `tmdb_id`가 아닌 내부 `movie_id`를 사용하는가?
+- TMDB 영화는 `cast` 수정 UI를 비활성화했는가?
+- 관리자 수정에서 목록 전체 제거 시 `null`이 아닌 빈 배열을 보내는가?
+- 프로필 이미지의 `/uploads/images/user_profiles/` 경로를 처리하는가?
 
-### 10.4 채팅
+### 11.4 채팅
 
 - `POST /chat` 요청에서 `stream` 필드를 보내지 않는가?
 - SSE/JSON을 `content-type`으로 분기하는가?
@@ -1747,7 +2107,7 @@ AI 서버 timeout/연결 실패도 현재 HTTP 200 + `state: "error"`입니다.
 - 캐릭터 이름과 한글 path parameter를 `encodeURIComponent` 처리하는가?
 - 새 1:1 SSE 방의 `room_id`가 필요하면 스트림 종료 후 방 목록을 갱신하는가?
 
-### 10.5 현재 백엔드 정리 우선순위
+### 11.5 현재 백엔드 정리 우선순위
 
 프론트가 임시 분기 없이 연동하려면 백엔드에서 아래 항목을 우선 정리하는 것이 좋습니다.
 
@@ -1758,5 +2118,7 @@ AI 서버 timeout/연결 실패도 현재 HTTP 200 + `state: "error"`입니다.
 5. 기존 채팅방 이어가기의 일반 JSON/그룹/SSE 정책 확정
 6. SSE 시작 이벤트에 `room_id` 포함
 7. OpenAPI response model 보강
+8. 관리자 권한 변경의 `HTTPException`이 일반 예외 응답으로 바뀌는 문제 수정
+8. 관리자 권한 변경 라우터에서 `HTTPException`을 그대로 다시 발생시켜 404/409 유지
 
 경로 오타를 수정할 때는 프론트 배포와 동시에 바꾸거나, 일정 기간 기존 경로와 새 경로를 함께 제공하는 방식이 안전합니다.

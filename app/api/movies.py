@@ -5,12 +5,12 @@ from app.ai_client.recommend import request_ai_recommend
 from app.core.current_user import get_current_user, get_optional_current_user
 from app.core.dependencies import get_db
 from app.schemas.movies import MovieDetailData, MovieDetailResponse, RecommendRequest
-from app.services.actors_service import get_actors_result
-from app.services.movies.movies_genre_service import genre_movies
-from app.services.movies.movies_ranking_service import movie_detail, realtime_movie_ranking_result
+from app.services.actor_service import get_actors_result
+from app.services.movies.genre_service import genre_movies
+from app.services.movies.ranking_service import movie_detail, realtime_movie_ranking_result
 from app.services.interaction_service import detail_movie_result, like_movie_result
-from app.services.movies.movies_search_service import search_movies_result
-from app.services.movies.movies_recommend_service import get_recommend_movies_result, get_recommend_today_movie_result, get_user_recommend_movies_result
+from app.services.movies.search_service import search_movies_result
+from app.services.movies.recommendation_service import get_recommend_movies_result, get_recommend_today_movie_result, get_user_recommend_movies_result
 from app.services.movies.tmdb_trailer_service import get_movie_trailer_url
 from app.services.user_service import user_like_actor
 

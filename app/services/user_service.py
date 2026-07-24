@@ -11,13 +11,25 @@ from app.models.interactions import UserMovieInteraction
 from app.models.movies import Movie
 from app.models.users import User, UserPreferenceScore
 
-# 파일 기본 경로
+# 프로젝트 최상위 폴더를 기준으로 업로드 파일의 절대 경로를 구성한다.
+# 현재 파일은 app/services/user_service.py에 있으므로 parents[2]가 프로젝트 루트이다.
 BASE_DIR = Path(__file__).resolve().parents[2]
 
-# 실제 파일이 저장될 서버 내부 경로입니다.
-PROFILE_IMAGE_ROOT = BASE_DIR/"app"/"profile_images"
-# 프론트에 보여질 이미지 파일 경로
-PUBLIC_PROFILE_IMAGE_PREFIX = "/profile_images"
+# 프로필 이미지가 실제로 저장되고 삭제되는 서버 내부 디렉터리이다.
+# 사용자 업로드 파일을 app/uploads 아래에서 종류별로 관리하기 위해
+# 프로필 전용 폴더인 images/user_profiles를 사용한다.
+PROFILE_IMAGE_ROOT = (
+    BASE_DIR / "app" / "uploads" / "images" / "user_profiles"
+)
+
+# DB에 저장하고 프론트엔드에 전달할 공개 URL의 앞부분이다.
+# main.py에서 app/uploads를 "/uploads"로 연결했으므로 실제 저장 경로의
+# images/user_profiles 부분까지 동일하게 이어서 작성해야 한다.
+PUBLIC_PROFILE_IMAGE_PREFIX = "/uploads/images/user_profiles"
+
+# 배포 환경이나 새로 프로젝트를 내려받은 환경에서도 이미지 저장이 가능하도록
+# 필요한 상위 폴더를 함께 생성한다. 폴더가 이미 존재하면 변경하지 않는다.
+PROFILE_IMAGE_ROOT.mkdir(parents=True, exist_ok=True)
 
 # 최대 이미지 용량: 5MB
 MAX_PROFILE_IMAGE_SIZE = 5 * 1024 * 1024

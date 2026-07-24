@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.models.interactions import UserMovieInteraction
 from app.models.movies import Movie, MovieStats
 from app.models.users import User
-from app.services.movies.movies_ranking_service import add_movie_ranking_score
+from app.services.movies.ranking_service import add_movie_ranking_score
 from app.services.preference_service import add_movie_preference_scores, decrease_movie_preference_scores, movie_genre_add_preferences_user
 
 def user_interaction_result(user_id: int, movie_id:int, action_type:str, source:str, score_delta:int):

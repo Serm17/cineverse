@@ -5,7 +5,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.ai_client.chat import stream_character_chat
-from app.repsitories.chat_repository import create_message, create_room, get_room_messages, get_room_user, make_ai_history
+from app.repositories.chat_repository import create_message, create_room, get_room_messages, get_room_user, make_ai_history
 from app.schemas.chat import CharacterChatRequest, SendChatMessageRequest
 from app.services.character_service import get_active_character
 

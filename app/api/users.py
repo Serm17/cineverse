@@ -9,7 +9,7 @@ from app.schemas.movies import ShowMovies
 from app.schemas.users import PreferenceDeleteRequest
 from app.services.interaction_service import delete_liked_movie_result
 from app.services.movies.ai_chat_recommend_service import get_chat_ai_recommended_movies_result
-from app.services.movies.movies_search_service import get_movie_result
+from app.services.movies.search_service import get_movie_result
 from app.services.preference_service import delete_my_preference_result, get_user_preference_scores
 from app.services.user_service import delet_user_profile_image, get_profile_image_path, get_recently_viewed_movies_result, get_user, movies_like_result, update_user_profile_image
 

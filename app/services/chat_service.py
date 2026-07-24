@@ -3,7 +3,7 @@ import json
 from sqlalchemy.orm import Session
 
 from app.ai_client.chat import request_ai_chat, request_character_chat, request_group_chat
-from app.repsitories.chat_repository import create_group_room, create_message, create_room, get_room_messages, get_room_user, make_ai_history
+from app.repositories.chat_repository import create_group_room, create_message, create_room, get_room_messages, get_room_user, make_ai_history
 from app.schemas.chat import AutoChatRequest, CharacterChatRequest, GroupChatRequest, SendChatMessageRequest
 from app.services.character_service import get_active_character
 

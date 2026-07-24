@@ -1,7 +1,10 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import ExpiredSignatureError, JWTError, jwt
+from sqlalchemy.orm import Session
 from app.core.config import settings
+from app.core.dependencies import get_db
+from app.models.users import User
 
 bearer_scheme = HTTPBearer(auto_error = False)
 
@@ -68,3 +71,30 @@ def get_optional_current_user(credentials : HTTPAuthorizationCredentials | None 
         return auth_error("Authorization 헤더 방식이 올바르지 않습니다.", "INVALID_AUTH_SCHEME")
     
     return decode_access_token(credentials.credentials)
+
+def get_current_admin(
+        current_user : dict = Depends(get_current_user),
+        db : Session = Depends(get_db)
+):
+    user_id = current_user["user_id"]
+    user = db.get(User, user_id)
+
+
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={
+                "state" : "failure",
+                "message" : "사용자를 찾을 수 없습니다."
+            }
+        )
+
+    if not user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={
+                "state" : "failure",
+                "message" : "관리자 권한이 필요합니다."
+            }
+        )
+    return user
