@@ -10,6 +10,7 @@ from app.schemas.users import PreferenceDeleteRequest
 from app.services.interaction_service import delete_liked_movie_result
 from app.services.movies.ai_chat_recommend_service import get_chat_ai_recommended_movies_result
 from app.services.movies.search_service import get_movie_result
+from app.services.preference_delete_service import delete_my_preference_type_result
 from app.services.preference_service import delete_my_preference_result, get_user_preference_scores
 from app.services.user_service import delet_user_profile_image, get_profile_image_path, get_recently_viewed_movies_result, get_user, movies_like_result, update_user_profile_image
 
@@ -194,7 +195,37 @@ async def get_my_preferences(
             "message" : "취향 조회 실패",
             "error" : str(e),
         }
-    
+
+# 로그인한 사용자의 장르·배우·키워드 중 요청한 한 종류를 모두 삭제한다.
+@router.delete("/preferences/{preference_type}")
+async def delete_my_preference_type(
+    preference_type: str,
+    current_user: dict = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    try:
+        # 요청값으로 사용자 ID를 받지 않고 JWT에서 검증된 ID를 사용해
+        # 로그인한 사용자가 자신의 취향 정보만 삭제할 수 있도록 제한한다.
+        user_id = current_user["user_id"]
+
+        # 취향 타입 검증, 사용자 조회, 명시적 취향 배열 초기화와 학습 점수 삭제는
+        # 별도 서비스 함수에 맡겨 API가 인증과 요청 전달 역할에 집중하도록 한다.
+        return delete_my_preference_type_result(
+            db=db,
+            user_id=user_id,
+            preference_type=preference_type,
+        )
+
+    except Exception as e:
+        # 인증 정보 확인이나 서비스 호출 과정에서 예상하지 못한 오류가 발생하면
+        # 처리 중인 DB 변경이 남지 않도록 현재 트랜잭션을 되돌린다.
+        db.rollback()
+        return {
+            "state": "error",
+            "message": "취향 전체 삭제 API 처리 중 에러가 발생했습니다.",
+            "error": str(e),
+        }
+
 # 선호 종류 - 키 삭제
 @router.delete("/preference/delete")
 async def delete_my_preference(

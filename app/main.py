@@ -157,5 +157,5 @@ async def ai_health_check():
 if __name__ =="__main__":
     # 작성된 파일을 main.py로 저장했을 경우를 가정하고 서버를 실행합니다.
     # 포트를 8080으로 지정하여 localhost:8080에서 확인 가능하도록 설정합니다.
-    uvicorn.run("main:app", host="127.0.0.1", port=8080, reload=True)
-    # uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)
+    # uvicorn.run("main:app", host="127.0.0.1", port=8080, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8080, reload=True)

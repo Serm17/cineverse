@@ -326,6 +326,7 @@ Authorization: Bearer <access_token>
 | `PATCH` | `/user/profile_image` | 필요 | 프로필 이미지 등록·변경 |
 | `DELETE` | `/user/delete/profile_image` | 필요 | 프로필 이미지 삭제 |
 | `GET` | `/user/preferences` | 필요 | 직접 설정·자동 학습 선호 정보 조회 |
+| `DELETE` | `/user/preferences/{preference_type}` | 필요 | 장르·배우·키워드 중 선택한 종류의 취향 전체 삭제 |
 | `DELETE` | `/user/preference/delete` | 필요 | 선호 항목 삭제 |
 | `GET` | `/user/movies-like` | 필요 | 좋아요 영화 조회 |
 | `DELETE` | `/user/movie-like/{movie_id}` | 필요 | 영화 좋아요 삭제 |
