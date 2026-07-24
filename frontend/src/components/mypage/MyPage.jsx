@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   fetchActors,
@@ -12,6 +12,7 @@ import {
   fetchChatRecommendedMovies,
   getRecommendedMovies,
   deletePreference,
+  deletePreferenceType,
   deleteProfileImage,
   removeLikedMovie,
   savePreferredActor,
@@ -25,6 +26,7 @@ import './mypage.css';
 const GENRE_SLOT_COUNT = 7;
 const CHAT_PREVIEW_COUNT = 4;
 const RECOMMENDATION_SLOT_COUNT = 6;
+const PICKED_MOVIE_SLOT_COUNT = 9;
 
 function toTagText(items) {
   return Array.isArray(items) ? items.join(', ') : '';
@@ -145,6 +147,10 @@ function MyPage({ authUser, onUserUpdate }) {
   const [addingGenreIndex, setAddingGenreIndex] = useState(null);
   const [newGenreInput, setNewGenreInput] = useState('');
   const [isChatHistoryModalOpen, setIsChatHistoryModalOpen] = useState(false);
+  const [isPreferenceDeleteModalOpen, setIsPreferenceDeleteModalOpen] = useState(false);
+  const [deletingPreferenceType, setDeletingPreferenceType] = useState('');
+  const [areKeywordsTruncated, setAreKeywordsTruncated] = useState(false);
+  const keywordListRef = useRef(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -254,6 +260,25 @@ function MyPage({ authUser, onUserUpdate }) {
     ...(preferences.keywords || []).map((text) => ({ text, category: 'keywords' })),
   ];
 
+  useEffect(() => {
+    const keywordList = keywordListRef.current;
+
+    if (!keywordList || isPreferenceEditing) {
+      setAreKeywordsTruncated(false);
+      return undefined;
+    }
+
+    const updateTruncation = () => {
+      setAreKeywordsTruncated(keywordList.scrollHeight > keywordList.clientHeight + 1);
+    };
+
+    updateTruncation();
+    const resizeObserver = new ResizeObserver(updateTruncation);
+    resizeObserver.observe(keywordList);
+
+    return () => resizeObserver.disconnect();
+  }, [isPreferenceEditing, preferenceText]);
+
   const displayName = profile.nickname || authUser?.nickname || '게스트';
   // "채팅 이력" 추천은 AI/캐릭터 채팅에서 실제로 추천받은 영화만 보여준다.
   // 채팅 기록이 없으면 비워 둔다(일반 추천으로 폴백하지 않음).
@@ -265,7 +290,7 @@ function MyPage({ authUser, onUserUpdate }) {
       return list.findIndex((item) => String(item.id ?? item.title) === key) === index;
     })
     .slice(0, RECOMMENDATION_SLOT_COUNT);
-  const pickedMovies = likedMovies.slice(0, 7);
+  const pickedMovies = likedMovies.slice(0, PICKED_MOVIE_SLOT_COUNT);
   // user_preferences의 actors를 기준으로 표시하고, 사진은 /actors 응답(없으면 같은 이름의 캐릭터)에서 가져온다.
   const preferredActors = preferences.actors.map((actorName) => {
     const matchedActor = actors.find((actor) => actor.name === actorName);
@@ -511,6 +536,31 @@ function MyPage({ authUser, onUserUpdate }) {
     }
   };
 
+  const handleDeletePreferenceType = async (preferenceType) => {
+    if (deletingPreferenceType) return;
+
+    setDeletingPreferenceType(preferenceType);
+    setStatusMessage('');
+
+    try {
+      const result = await deletePreferenceType(preferenceType);
+      const refreshed = await fetchUserPreferences();
+      const nextPreferences = refreshed.preferences || refreshed || {};
+
+      setPreferenceText({
+        genres: toTagText(nextPreferences.genres),
+        actors: toTagText(nextPreferences.actors),
+        keywords: toTagText(nextPreferences.keywords),
+      });
+      setIsPreferenceDeleteModalOpen(false);
+      setStatusMessage(result.message || '선택한 취향을 모두 삭제했습니다.');
+    } catch (error) {
+      setStatusMessage(error.message);
+    } finally {
+      setDeletingPreferenceType('');
+    }
+  };
+
   const handleRemoveLikedMovie = async (movie) => {
     setLikedMovies((current) => current.filter((item) => item.title !== movie.title));
 
@@ -601,13 +651,22 @@ function MyPage({ authUser, onUserUpdate }) {
         <article className="mypage-keyword-card">
           <div className="mypage-card-title">
             <h2>나의 관심 키워드</h2>
-            <button
-              className="mypage-text-link"
-              type="button"
-              onClick={isPreferenceEditing ? handleSavePreferences : () => setIsPreferenceEditing(true)}
-            >
-              {isPreferenceEditing ? '저장하기' : '수정하기'} ›
-            </button>
+            <div className="mypage-card-actions">
+              <button
+                className="mypage-delete-all"
+                type="button"
+                onClick={() => setIsPreferenceDeleteModalOpen(true)}
+              >
+                전체 삭제
+              </button>
+              <button
+                className="mypage-text-link"
+                type="button"
+                onClick={isPreferenceEditing ? handleSavePreferences : () => setIsPreferenceEditing(true)}
+              >
+                {isPreferenceEditing ? '저장하기' : '수정하기'} ›
+              </button>
+            </div>
           </div>
 
           {isPreferenceEditing ? (
@@ -638,7 +697,10 @@ function MyPage({ authUser, onUserUpdate }) {
               />
             </div>
           ) : (
-            <div className="mypage-keywords">
+            <div
+              ref={keywordListRef}
+              className={`mypage-keywords${areKeywordsTruncated ? ' mypage-keywords--truncated' : ''}`}
+            >
               {keywordTags.map((tag, index) => (
                 <span className="mypage-keyword-chip" key={`${tag.category}-${tag.text}-${index}`}>
                   {tag.text}
@@ -847,6 +909,11 @@ function MyPage({ authUser, onUserUpdate }) {
               onRemove={handleRemoveLikedMovie}
             />
           ))}
+          {Array.from({
+            length: Math.max(0, PICKED_MOVIE_SLOT_COUNT - pickedMovies.length),
+          }).map((_, index) => (
+            <EmptyPosterCard key={`empty-picked-${index}`} />
+          ))}
         </div>
       </section>
 
@@ -880,6 +947,59 @@ function MyPage({ authUser, onUserUpdate }) {
                   <strong>{row.title}와 대화중 ....</strong>
                   <span>바로가기 ›</span>
                 </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {isPreferenceDeleteModalOpen ? (
+        <div
+          className="mypage-modal-backdrop"
+          onClick={() => {
+            if (!deletingPreferenceType) setIsPreferenceDeleteModalOpen(false);
+          }}
+          role="presentation"
+        >
+          <div
+            className="mypage-modal mypage-preference-delete-modal"
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="preference-delete-title"
+          >
+            <button
+              className="mypage-modal__close"
+              type="button"
+              disabled={Boolean(deletingPreferenceType)}
+              onClick={() => setIsPreferenceDeleteModalOpen(false)}
+              aria-label="닫기"
+            >
+              ×
+            </button>
+
+            <h3 className="mypage-modal__title" id="preference-delete-title">
+              취향 전체 삭제
+            </h3>
+            <p className="mypage-preference-delete-modal__description">
+              삭제할 취향 종류를 선택하세요. 해당 종류의 저장된 취향과 자동 학습 점수가 모두 삭제됩니다.
+            </p>
+
+            <div className="mypage-preference-delete-options">
+              {[
+                { type: 'genre', label: '선호 장르 전체 삭제' },
+                { type: 'actor', label: '선호 배우 전체 삭제' },
+                { type: 'keyword', label: '관심 키워드 전체 삭제' },
+              ].map((option) => (
+                <button
+                  className="mypage-preference-delete-option"
+                  type="button"
+                  key={option.type}
+                  disabled={Boolean(deletingPreferenceType)}
+                  onClick={() => handleDeletePreferenceType(option.type)}
+                >
+                  {deletingPreferenceType === option.type ? '삭제 중…' : option.label}
+                </button>
               ))}
             </div>
           </div>

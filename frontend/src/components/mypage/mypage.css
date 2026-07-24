@@ -133,6 +133,29 @@
   gap: 18px;
 }
 
+.mypage-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.mypage-delete-all {
+  padding: 5px 10px;
+  border: 1px solid rgba(244, 95, 95, 0.65);
+  border-radius: 999px;
+  background: transparent;
+  color: #ff8585;
+  font-size: 11px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.mypage-delete-all:hover {
+  border-color: #f45f5f;
+  background: rgba(244, 95, 95, 0.12);
+  color: #ff9b9b;
+}
+
 .mypage-keyword-card {
   min-height: 190px;
   padding: 22px 26px;
@@ -144,15 +167,21 @@
 
 .mypage-keywords {
   min-width: 0;
+  max-height: 97px;
+  padding: 6px 6px 0 0;
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: 8px 12px;
+  overflow: hidden;
+  box-sizing: border-box;
 }
 
 .mypage-keywords span {
   position: relative;
   max-width: 100%;
   min-width: 44px;
+  height: 25px;
   padding: 6px 13px;
   border: 1px solid #465054;
   border-radius: 999px;
@@ -161,6 +190,27 @@
   line-height: 1;
   text-align: center;
   overflow-wrap: anywhere;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.mypage-keywords--truncated::after {
+  content: '...';
+  width: 48px;
+  height: 25px;
+  padding-right: 2px;
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  background: linear-gradient(90deg, transparent, #181f21 35%);
+  color: #c9d0d2;
+  font-size: 16px;
+  font-weight: 700;
+  box-sizing: border-box;
+  pointer-events: none;
 }
 
 /* 배우/장르/키워드 항목 우측 상단의 작은 X 삭제 버튼 */
@@ -661,6 +711,42 @@ a.mypage-actor__circle:hover {
   gap: 8px;
 }
 
+.mypage-preference-delete-modal__description {
+  padding-right: 28px;
+  color: #aeb8bb;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.mypage-preference-delete-options {
+  display: grid;
+  gap: 10px;
+}
+
+.mypage-preference-delete-option {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 16px;
+  border: 1px solid rgba(244, 95, 95, 0.42);
+  border-radius: 11px;
+  background: rgba(244, 95, 95, 0.08);
+  color: #ff9b9b;
+  font-weight: 800;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mypage-preference-delete-option:hover:not(:disabled) {
+  border-color: #f45f5f;
+  background: rgba(244, 95, 95, 0.18);
+}
+
+.mypage-preference-delete-option:disabled,
+.mypage-modal__close:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 :root[data-theme="light"] .mypage h1,
 :root[data-theme="light"] .mypage h2,
 :root[data-theme="light"] .mypage-modal__title {
@@ -695,6 +781,20 @@ a.mypage-actor__circle:hover {
 
 :root[data-theme="light"] .mypage-modal__close:hover {
   background: rgba(0, 0, 0, 0.12);
+}
+
+:root[data-theme="light"] .mypage-preference-delete-modal__description {
+  color: #5d6b74;
+}
+
+:root[data-theme="light"] .mypage-preference-delete-option {
+  background: #fff5f5;
+  color: #b33232;
+}
+
+:root[data-theme="light"] .mypage-keywords--truncated::after {
+  background: linear-gradient(90deg, transparent, #fff 35%);
+  color: #526067;
 }
 
 @media (max-width: 1180px) {

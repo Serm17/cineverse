@@ -141,9 +141,13 @@ function PreferenceCard({ authUser }) {
           }
 
           .taste-tags {
+            flex: 1;
+            min-width: 0;
+            max-height: 52px;
             display: flex;
             flex-wrap: wrap;
             gap: 8px;
+            overflow: hidden;
           }
 
           .taste-tags span {

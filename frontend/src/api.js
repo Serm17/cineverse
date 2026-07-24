@@ -1,7 +1,7 @@
 // refresh cookie의 host/path가 실제 API 요청과 일치하도록 기본값은 백엔드에 직접 연결한다.
 // 다른 환경에서는 VITE_API_BASE_URL로 전체 API 주소를 지정한다.
 const BACKEND_BASE_URL = (
-  import.meta.env.VITE_API_BASE_URL || 'http://210.109.15.9'
+  import.meta.env.VITE_API_BASE_URL || 'http://192.168.45.138:8080'
 ).replace(/\/+$/, '');
 
 const LOCAL_PROFILE_KEY = 'cineverse.localProfile';
@@ -1200,6 +1200,46 @@ export async function deletePreference(preferenceType, preferenceValue, signal) 
   };
 }
 
+// 취향 종류 전체 삭제 (DELETE /user/preferences/{preference_type}) — 인증 필요.
+// 서버 삭제 후 로컬 병합 데이터에서도 같은 종류를 제거해 이전 값이 다시 보이지 않게 한다.
+export async function deletePreferenceType(preferenceType, signal) {
+  const categoryMap = {
+    genre: 'genres',
+    actor: 'actors',
+    keyword: 'keywords',
+  };
+  const category = categoryMap[preferenceType];
+
+  if (!category) {
+    throw new Error('허용되지 않는 취향 타입입니다.');
+  }
+
+  const response = await fetchWithAuth(
+    `${BACKEND_BASE_URL}/user/preferences/${encodeURIComponent(preferenceType)}`,
+    { method: 'DELETE', signal }
+  );
+  const data = await response.json().catch(() => null);
+
+  // 비즈니스 실패도 HTTP 200으로 올 수 있으므로 state가 success인지 반드시 확인한다.
+  if (!response.ok || getResponseState(data) !== 'success') {
+    throw new Error(getErrorMessage(data, `취향 전체 삭제 실패 (${response.status})`));
+  }
+
+  const localPreferences = readLocalJson(LOCAL_PREFERENCES_KEY, {});
+  const nextLocalPreferences = {
+    ...(localPreferences || {}),
+    [category]: [],
+  };
+
+  if (preferenceType === 'keyword') {
+    nextLocalPreferences.directors = [];
+  }
+
+  writeLocalJson(LOCAL_PREFERENCES_KEY, nextLocalPreferences);
+
+  return data || {};
+}
+
 
 export async function likeMovie(movieId, signal) {
   const response = await fetchWithAuth(`${BACKEND_BASE_URL}/movies/${movieId}/like`, {
@@ -1455,22 +1495,46 @@ async function requestAdminApi(path, { method = 'GET', body, signal } = {}) {
   });
   const data = await response.json().catch(() => null);
 
-  if (!response.ok || isFailureResponse(data)) {
+  if (!response.ok) {
     if (response.status === 401) throw new Error('로그인이 필요하거나 인증이 만료되었습니다.');
     if (response.status === 403) throw new Error('관리자 권한이 필요합니다.');
     throw new Error(getErrorMessage(data, `관리자 API 요청 실패 (${response.status})`));
   }
+
+  // 권한 변경 제한 오류는 HTTP 200으로 오므로 반드시 응답 state를 검사한다.
+  if (data?.state !== 'success') {
+    throw new Error(data?.error || data?.message || '관리자 요청 처리에 실패했습니다.');
+  }
   return data;
 }
 
+export const checkAdminAccess = (signal) => requestAdminApi('/admin/check', { signal });
+export const updateUserAdminRole = (email, isAdmin, signal) =>
+  requestAdminApi('/admin/users/admin-role', {
+    method: 'PATCH',
+    body: { email: email.trim(), is_admin: isAdmin },
+    signal,
+  });
+
+export const searchAdminTmdbMovies = (query, page = 1, signal) => {
+  const params = new URLSearchParams({ query: query.trim(), page: String(page) });
+  return requestAdminApi(`/admin/tmdb-movies-search?${params}`, { signal });
+};
+export const registerAdminTmdbMovie = (tmdbId, signal) =>
+  requestAdminApi(`/admin/tmdb-movies-register/${encodeURIComponent(tmdbId)}`, {
+    method: 'POST',
+    signal,
+  });
 export const createAdminMovie = (payload, signal) =>
-  requestAdminApi('/admin/movies', { method: 'POST', body: payload, signal });
-export const updateAdminMovie = (id, payload, signal) =>
-  requestAdminApi(`/admin/movies/${encodeURIComponent(id)}`, { method: 'PUT', body: payload, signal });
-export const deleteAdminMovie = (id, signal) =>
-  requestAdminApi(`/admin/movies/${encodeURIComponent(id)}`, { method: 'DELETE', signal });
-export const createAdminCharacter = (payload, signal) =>
-  requestAdminApi('/admin/characters', { method: 'POST', body: payload, signal });
-export const updateAdminCharacter = (id, payload, signal) =>
-  requestAdminApi(`/admin/characters/${encodeURIComponent(id)}`, { method: 'PUT', body: payload, signal });
-export const fetchAdminStats = (signal) => requestAdminApi('/admin/stats', { signal });
+  requestAdminApi('/admin/movie', { method: 'POST', body: payload, signal });
+export const updateAdminMovie = (movieId, payload, signal) =>
+  requestAdminApi(`/admin/movie/${encodeURIComponent(movieId)}`, {
+    method: 'PATCH',
+    body: payload,
+    signal,
+  });
+export const deleteAdminMovie = (movieId, signal) =>
+  requestAdminApi(`/admin/movie/${encodeURIComponent(movieId)}`, {
+    method: 'DELETE',
+    signal,
+  });

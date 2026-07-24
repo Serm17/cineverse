@@ -51,7 +51,14 @@ function RankPanel() {
         {visibleRankings.map((movie) => (
           <div className="index-rank-item" key={movie.rank}>
             <strong>{movie.rank}</strong>
-            <PosterArt movie={movie} compact />
+            <a
+              className="index-rank-poster-link"
+              href={`/recommendations?keyword=${encodeURIComponent(movie.title)}`}
+              aria-label={`${movie.title} 검색 결과 보기`}
+              title={`${movie.title} 검색`}
+            >
+              <PosterArt movie={movie} compact />
+            </a>
             <div>
               <b>{movie.title}</b>
               <span>{movie.genre}</span>
